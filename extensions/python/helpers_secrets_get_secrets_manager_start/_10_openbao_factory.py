@@ -32,7 +32,7 @@ class OpenBaoFactory(Extension):
         import os
         from python.helpers.plugins import find_plugin_dir
 
-        plugin_dir = find_plugin_dir("openbao_secrets")
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
 
