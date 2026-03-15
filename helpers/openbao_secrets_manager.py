@@ -230,29 +230,30 @@ class OpenBaoSecretsManager(SecretsManager):
         return "\n".join(lines)
 
     def save_secrets(self, secrets_content: str) -> None:
-        """Save secrets — not supported in v0.1.0 (read-only from OpenBao).
+        """Save secrets to the default .env backend.
 
-        Raises:
-            NotImplementedError: Always. Write-through to OpenBao is planned
-                for a future release.
+        OpenBao write-through is planned for a future version.
+        For now, delegates to the base SecretsManager which writes
+        to the .env file.
         """
-        raise NotImplementedError(
-            "OpenBao plugin v0.1.0 is read-only. "
-            "Secret writes are not yet supported. "
-            "Use the OpenBao CLI or API to manage secrets directly."
+        logger.info(
+            "OpenBao plugin: save_secrets delegating to .env backend "
+            "(OpenBao write-through not yet implemented)"
         )
+        super().save_secrets(secrets_content)
 
     def save_secrets_with_merge(self, submitted_content: str) -> None:
-        """Merge and save secrets — not supported in v0.1.0.
+        """Merge and save secrets to the default .env backend.
 
-        Raises:
-            NotImplementedError: Always.
+        OpenBao write-through is planned for a future version.
+        For now, delegates to the base SecretsManager which merges
+        and writes to the .env file.
         """
-        raise NotImplementedError(
-            "OpenBao plugin v0.1.0 is read-only. "
-            "Secret writes are not yet supported. "
-            "Use the OpenBao CLI or API to manage secrets directly."
+        logger.info(
+            "OpenBao plugin: save_secrets_with_merge delegating to .env backend "
+            "(OpenBao write-through not yet implemented)"
         )
+        super().save_secrets_with_merge(submitted_content)
 
     def get_masked_secrets(self) -> str:
         """Get content with values masked for frontend display.
