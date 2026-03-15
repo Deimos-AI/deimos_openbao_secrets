@@ -137,6 +137,8 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 logger.warning("Could not find deps.py at %s", _dp)
                 return None
             _dm = _ilu.module_from_spec(_sp)
+            import sys as _sys
+            _sys.modules[_sp.name] = _dm
             _sp.loader.exec_module(_dm)
             _ensure_deps = _dm.ensure_dependencies
 
@@ -163,6 +165,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 logger.warning("Could not load config module from %s", config_path)
                 return None
             config_mod = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = config_mod  # Required for @dataclass in Python 3.13+
             spec.loader.exec_module(config_mod)
 
             config = config_mod.load_config(plugin_dir)
@@ -183,6 +186,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 logger.warning("Could not load client module from %s", client_path)
                 return None
             client_mod = importlib.util.module_from_spec(spec_client)
+            sys.modules[spec_client.name] = client_mod
             spec_client.loader.exec_module(client_mod)
 
             manager_path = os.path.join(plugin_dir, "helpers", "openbao_secrets_manager.py")
@@ -193,9 +197,14 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             mgr_mod = importlib.util.module_from_spec(spec_mgr)
 
             # Inject dependencies for the manager module
+            # Both the logical import names AND the spec names must be in
+            # sys.modules — Python 3.13's @dataclass looks up cls.__module__
+            # and will fail with 'NoneType has no attribute __dict__' if the
+            # module is not registered.
             import sys
             sys.modules["helpers.openbao_client"] = client_mod
             sys.modules["helpers.config"] = config_mod
+            sys.modules[spec_mgr.name] = mgr_mod
 
             spec_mgr.loader.exec_module(mgr_mod)
 
