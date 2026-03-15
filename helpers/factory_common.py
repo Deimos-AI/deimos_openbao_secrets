@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from typing import Optional, TYPE_CHECKING
 
@@ -137,8 +138,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 logger.warning("Could not find deps.py at %s", _dp)
                 return None
             _dm = _ilu.module_from_spec(_sp)
-            import sys as _sys
-            _sys.modules[_sp.name] = _dm
+            sys.modules[_sp.name] = _dm
             _sp.loader.exec_module(_dm)
             _ensure_deps = _dm.ensure_dependencies
 
@@ -201,7 +201,6 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             # sys.modules — Python 3.13's @dataclass looks up cls.__module__
             # and will fail with 'NoneType has no attribute __dict__' if the
             # module is not registered.
-            import sys
             sys.modules["helpers.openbao_client"] = client_mod
             sys.modules["helpers.config"] = config_mod
             sys.modules[spec_mgr.name] = mgr_mod
