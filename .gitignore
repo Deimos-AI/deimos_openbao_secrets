@@ -6,3 +6,8 @@ dist/
 build/
 .eggs/
 
+
+# Runtime files (instance-specific, not tracked)
+settings.json
+config.json
+.toggle-*

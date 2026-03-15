@@ -11,10 +11,16 @@ Fallback behaviour:
 
     This prevents the framework from silently using the default .env
     manager when the user has explicitly configured OpenBao.
+
+Environment injection:
+    After creating the manager, all secrets are injected into os.environ
+    so that code paths using os.getenv() directly (e.g., models.get_api_key())
+    can resolve secrets from OpenBao without any upstream code changes.
 """
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Optional, TYPE_CHECKING
 
@@ -27,6 +33,58 @@ logger = logging.getLogger(__name__)
 _manager: Optional["SecretsManager"] = None
 _init_lock = threading.Lock()
 _init_attempted = False
+_env_injected = False
+
+
+def _inject_secrets_to_env(manager: "SecretsManager") -> None:
+    """Inject OpenBao secrets into os.environ for direct os.getenv() consumers.
+
+    This bridges the gap between OpenBao-backed SecretsManager and code paths
+    that read API keys via os.getenv() (e.g., models.get_api_key() which calls
+    dotenv.get_dotenv_value() -> os.getenv()).
+
+    Only injects keys that are not already set in the environment to avoid
+    overriding explicit env vars (e.g., from docker-compose or .env).
+    """
+    global _env_injected
+    if _env_injected:
+        return
+
+    try:
+        secrets = manager.load_secrets()
+        if not secrets:
+            logger.debug("No secrets to inject into environment")
+            return
+
+        injected = []
+        skipped = []
+        for key, value in secrets.items():
+            if not value:  # Skip empty values
+                continue
+            if key in os.environ:
+                # Don't override existing env vars — explicit env takes precedence
+                skipped.append(key)
+            else:
+                os.environ[key] = value
+                injected.append(key)
+
+        if injected:
+            logger.info(
+                "Injected %d OpenBao secrets into os.environ: %s",
+                len(injected),
+                ", ".join(sorted(injected)),
+            )
+        if skipped:
+            logger.debug(
+                "Skipped %d keys already in env: %s",
+                len(skipped),
+                ", ".join(sorted(skipped)),
+            )
+
+        _env_injected = True
+
+    except Exception as exc:
+        logger.warning("Failed to inject secrets into os.environ: %s", exc)
 
 
 def get_openbao_manager() -> Optional["SecretsManager"]:
@@ -39,6 +97,10 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
         - fallback_to_env=True  -> OpenBao first, then .env on failure
         - fallback_to_env=False -> OpenBao only, empty dict on failure
 
+    After creation, injects all resolved secrets into os.environ so that
+    code paths using os.getenv() directly (e.g., models.get_api_key())
+    can access OpenBao secrets without upstream code changes.
+
     Thread-safe: uses a lock to ensure single initialization.
     """
     global _manager, _init_attempted
@@ -46,6 +108,8 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
     if _manager is not None:
         # Fast path — already initialized and returned regardless of
         # current OpenBao availability. The manager handles fallback.
+        # Ensure env injection happened (covers edge case of reset())
+        _inject_secrets_to_env(_manager)
         return _manager
 
     if _init_attempted:
@@ -69,6 +133,9 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             import importlib.util as _ilu
             _dp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deps.py")
             _sp = _ilu.spec_from_file_location("openbao_deps", _dp)
+            if _sp is None:
+                logger.warning("Could not find deps.py at %s", _dp)
+                return None
             _dm = _ilu.module_from_spec(_sp)
             _sp.loader.exec_module(_dm)
             _ensure_deps = _dm.ensure_dependencies
@@ -89,10 +156,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
 
             # Load and validate config
             import importlib.util
-            import os
 
             config_path = os.path.join(plugin_dir, "helpers", "config.py")
             spec = importlib.util.spec_from_file_location("openbao_config", config_path)
+            if spec is None:
+                logger.warning("Could not load config module from %s", config_path)
+                return None
             config_mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(config_mod)
 
@@ -110,11 +179,17 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             # Load the client and manager modules
             client_path = os.path.join(plugin_dir, "helpers", "openbao_client.py")
             spec_client = importlib.util.spec_from_file_location("openbao_client", client_path)
+            if spec_client is None:
+                logger.warning("Could not load client module from %s", client_path)
+                return None
             client_mod = importlib.util.module_from_spec(spec_client)
             spec_client.loader.exec_module(client_mod)
 
             manager_path = os.path.join(plugin_dir, "helpers", "openbao_secrets_manager.py")
             spec_mgr = importlib.util.spec_from_file_location("openbao_manager", manager_path)
+            if spec_mgr is None:
+                logger.warning("Could not load manager module from %s", manager_path)
+                return None
             mgr_mod = importlib.util.module_from_spec(spec_mgr)
 
             # Inject dependencies for the manager module
@@ -144,6 +219,11 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                         "OpenBao unavailable and fallback_to_env=False — "
                         "secrets will be empty until OpenBao recovers"
                     )
+
+            # Bridge: inject secrets into os.environ for direct os.getenv() consumers
+            # This is critical for models.get_api_key() which bypasses SecretsManager
+            _inject_secrets_to_env(_manager)
+
             return _manager
 
         except ImportError as exc:
@@ -156,7 +236,8 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
 
 def reset():
     """Reset the singleton — for testing."""
-    global _manager, _init_attempted
+    global _manager, _init_attempted, _env_injected
     with _init_lock:
         _manager = None
         _init_attempted = False
+        _env_injected = False
