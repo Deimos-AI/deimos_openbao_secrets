@@ -201,8 +201,6 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             # sys.modules — Python 3.13's @dataclass looks up cls.__module__
             # and will fail with 'NoneType has no attribute __dict__' if the
             # module is not registered.
-            sys.modules["helpers.openbao_client"] = client_mod
-            sys.modules["helpers.config"] = config_mod
             sys.modules[spec_mgr.name] = mgr_mod
 
             spec_mgr.loader.exec_module(mgr_mod)

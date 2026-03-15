@@ -13,8 +13,8 @@ from typing import Dict, List, Optional, Tuple
 
 from circuitbreaker import CircuitBreakerError
 from helpers.secrets import SecretsManager, alias_for_key, DEFAULT_SECRETS_FILE
-from helpers.config import OpenBaoConfig
-from helpers.openbao_client import OpenBaoClient
+from openbao_config import OpenBaoConfig
+from openbao_client import OpenBaoClient
 
 logger = logging.getLogger(__name__)
 

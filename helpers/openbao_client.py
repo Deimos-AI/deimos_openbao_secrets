@@ -24,7 +24,7 @@ from tenacity import (
     before_sleep_log,
 )
 
-from helpers.config import OpenBaoConfig
+from openbao_config import OpenBaoConfig
 
 logger = logging.getLogger(__name__)
 

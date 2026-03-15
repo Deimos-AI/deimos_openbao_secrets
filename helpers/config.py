@@ -163,7 +163,6 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
             logger.warning("Failed to read %s: %s", settings_path, exc)
 
     # Layer 2: Load from environment variables (higher priority — overwrites settings)
-    logger.warning("DIAG: OPENBAO_TOKEN in os.environ = %s, os.environ.get = %r", "OPENBAO_TOKEN" in os.environ, bool(os.environ.get("OPENBAO_TOKEN")))
     for field_name, env_suffix in _FIELD_TO_ENV.items():
         env_var = f"{ENV_PREFIX}{env_suffix}"
         raw_value = os.environ.get(env_var)
