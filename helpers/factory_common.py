@@ -100,7 +100,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
 
     After creation, injects all resolved secrets into os.environ so that
     code paths using os.getenv() directly (e.g., models.get_api_key())
-    can access OpenBao secrets without upstream code changes.
+    can access OpenBao secrets without any upstream code changes.
 
     Thread-safe: uses a lock to ensure single initialization.
     """
@@ -139,7 +139,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 return None
             _dm = _ilu.module_from_spec(_sp)
             sys.modules[_sp.name] = _dm
-            _sp.loader.exec_module(_dm)
+            try:
+                _sp.loader.exec_module(_dm)
+            except Exception as e:
+                sys.modules.pop(_sp.name, None)
+                logger.warning("Failed to load deps module: %s", e)
+                return None
             _ensure_deps = _dm.ensure_dependencies
 
         if not _ensure_deps():
@@ -166,7 +171,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 return None
             config_mod = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = config_mod  # Required for @dataclass in Python 3.13+
-            spec.loader.exec_module(config_mod)
+            try:
+                spec.loader.exec_module(config_mod)
+            except Exception as e:
+                sys.modules.pop(spec.name, None)
+                logger.warning("Failed to load config module: %s", e)
+                return None
 
             config = config_mod.load_config(plugin_dir)
             errors = config_mod.validate_config(config)
@@ -187,7 +197,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 return None
             client_mod = importlib.util.module_from_spec(spec_client)
             sys.modules[spec_client.name] = client_mod
-            spec_client.loader.exec_module(client_mod)
+            try:
+                spec_client.loader.exec_module(client_mod)
+            except Exception as e:
+                sys.modules.pop(spec_client.name, None)
+                logger.warning("Failed to load client module: %s", e)
+                return None
 
             manager_path = os.path.join(plugin_dir, "helpers", "openbao_secrets_manager.py")
             spec_mgr = importlib.util.spec_from_file_location("openbao_manager", manager_path)
@@ -202,8 +217,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             # and will fail with 'NoneType has no attribute __dict__' if the
             # module is not registered.
             sys.modules[spec_mgr.name] = mgr_mod
-
-            spec_mgr.loader.exec_module(mgr_mod)
+            try:
+                spec_mgr.loader.exec_module(mgr_mod)
+            except Exception as e:
+                sys.modules.pop(spec_mgr.name, None)
+                logger.warning("Failed to load manager module: %s", e)
+                return None
 
             _manager = mgr_mod.OpenBaoSecretsManager.get_or_create(
                 config, DEFAULT_SECRETS_FILE
