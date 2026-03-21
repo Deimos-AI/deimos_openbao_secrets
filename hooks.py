@@ -53,21 +53,25 @@ def install():
         raise
 
 
-def save_plugin_config(result=None, project_name="", agent_profile="", settings=None):
+def save_plugin_config(result=None, settings=None, **kwargs):
     """Hook called by A0 framework during config save.
 
     If this hook is absent, save_plugin_config() in helpers/plugins.py
     receives None from call_plugin_hook() and SKIPS writing config.json.
     This hook must return the settings dict to allow the write.
+
+    **kwargs absorbs extra args the framework may pass (e.g. default=).
     """
     return settings or {}
 
 
-def get_plugin_config(result=None, plugin_name="", project_name="", agent_profile=""):
+def get_plugin_config(result=None, **kwargs):
     """Hook called by A0 framework during config load.
 
     Merges default_config.yaml underneath the saved config.json
     to ensure all fields are always present in the settings object.
+
+    **kwargs absorbs extra args the framework passes (e.g. agent=, default=).
     """
     import yaml
 
