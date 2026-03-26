@@ -4,7 +4,7 @@ Intercepts models.get_api_key() via @extensible to resolve API keys
 from OpenBao KV v2 before falling through to the default os.getenv()
 lookup.
 
-Extension point: models_get_api_key_start
+Extension point: _functions/models/get_api_key/start
 Priority: 10 (runs before any higher-numbered extensions)
 """
 import logging
