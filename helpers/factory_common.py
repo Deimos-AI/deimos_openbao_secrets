@@ -1,3 +1,16 @@
+# Copyright 2024 Deimos AI
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Shared factory logic for all three @extensible secrets hooks.
 
 Centralises OpenBao manager creation so the three extension
@@ -5,17 +18,21 @@ entry points stay thin.
 
 Fallback behaviour:
     When OpenBao is enabled and configured, the factory ALWAYS returns
-    the OpenBaoSecretsManager — even if OpenBao is currently unreachable.
+    the OpenBaoSecretsManager -- even if OpenBao is currently unreachable.
     The manager itself decides whether to fall back to .env files based
     on the `fallback_to_env` config setting.
 
     This prevents the framework from silently using the default .env
     manager when the user has explicitly configured OpenBao.
 
-Environment injection:
-    After creating the manager, all secrets are injected into os.environ
-    so that code paths using os.getenv() directly (e.g., models.get_api_key())
-    can resolve secrets from OpenBao without any upstream code changes.
+Proxy environment injection:
+    Instead of placing real API key values directly into os.environ
+    (which exposes them to subprocesses, LLM context, and shell history),
+    _inject_proxy_env(port) installs DUMMY sentinel values and rewrites
+    the relevant *_BASE_URL / *_API_BASE variables to point at the local
+    AuthProxy (helpers/auth_proxy.py).  The proxy intercepts outbound API
+    calls and re-attaches the real credential from OpenBao at request time
+    -- the plaintext key never leaves the process heap.
 """
 from __future__ import annotations
 
@@ -30,62 +47,46 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level singleton — shared across all three factory extensions
+# Module-level singleton -- shared across all three factory extensions
 _manager: Optional["SecretsManager"] = None
 _init_lock = threading.Lock()
 _init_attempted = False
-_env_injected = False
+
+# AuthProxy instance -- registered by extensions/python/agent_init/_10_start_auth_proxy.py
+# reset() will call stop() on it to shut down the proxy daemon gracefully.
+_proxy_instance = None
 
 
-def _inject_secrets_to_env(manager: "SecretsManager") -> None:
-    """Inject OpenBao secrets into os.environ for direct os.getenv() consumers.
+def _inject_proxy_env(port: int) -> None:
+    """Set dummy API key sentinels and redirect *_BASE_URL vars to local proxy.
 
-    This bridges the gap between OpenBao-backed SecretsManager and code paths
-    that read API keys via os.getenv() (e.g., models.get_api_key() which calls
-    dotenv.get_dotenv_value() -> os.getenv()).
+    Called by _10_start_auth_proxy after AuthProxy binds to its port.
+    Real credentials are NEVER placed in os.environ; the proxy fetches them
+    from OpenBao at request time and injects them into the outbound
+    Authorization / x-api-key header.
 
-    Only injects keys that are not already set in the environment to avoid
-    overriding explicit env vars (e.g., from docker-compose or .env).
+    Affected environment variables (all set on os.environ):
+        OPENAI_API_KEY          -> "proxy-a0"  (dummy sentinel)
+        OPENAI_API_BASE         -> http://127.0.0.1:{port}/proxy/openai
+        ANTHROPIC_API_KEY       -> "proxy-a0"  (dummy sentinel)
+        ANTHROPIC_BASE_URL      -> http://127.0.0.1:{port}/proxy/anthropic
+        OPENROUTER_API_KEY      -> "proxy-a0"  (dummy sentinel)
+        OPENROUTER_BASE_URL     -> http://127.0.0.1:{port}/proxy/openrouter
+        GH_TOKEN                -> "proxy-a0"  (dummy sentinel)
     """
-    global _env_injected
-    if _env_injected:
-        return
-
-    try:
-        secrets = manager.load_secrets()
-        if not secrets:
-            logger.debug("No secrets to inject into environment")
-            return
-
-        injected = []
-        skipped = []
-        for key, value in secrets.items():
-            if not value:  # Skip empty values
-                continue
-            if key in os.environ and os.environ[key]:
-                # Don't override existing non-empty env vars — explicit env takes precedence
-                skipped.append(key)
-            else:
-                os.environ[key] = value
-                injected.append(key)
-
-        if injected:
-            logger.info(
-                "Injected %d OpenBao secrets into os.environ: %s",
-                len(injected),
-                ", ".join(sorted(injected)),
-            )
-        if skipped:
-            logger.debug(
-                "Skipped %d keys already in env: %s",
-                len(skipped),
-                ", ".join(sorted(skipped)),
-            )
-
-        _env_injected = True
-
-    except Exception as exc:
-        logger.warning("Failed to inject secrets into os.environ: %s", exc)
+    proxy_base = f"http://127.0.0.1:{port}"
+    os.environ["OPENAI_API_KEY"] = "proxy-a0"
+    os.environ["OPENAI_API_BASE"] = f"{proxy_base}/proxy/openai"
+    os.environ["ANTHROPIC_API_KEY"] = "proxy-a0"
+    os.environ["ANTHROPIC_BASE_URL"] = f"{proxy_base}/proxy/anthropic"
+    os.environ["OPENROUTER_API_KEY"] = "proxy-a0"
+    os.environ["OPENROUTER_BASE_URL"] = f"{proxy_base}/proxy/openrouter"
+    os.environ["GH_TOKEN"] = "proxy-a0"
+    logger.info(
+        "Proxy env injected: port=%d  "
+        "(real keys remain in OpenBao vault, not in os.environ)",
+        port,
+    )
 
 
 def get_openbao_manager() -> Optional["SecretsManager"]:
@@ -98,23 +99,16 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
         - fallback_to_env=True  -> OpenBao first, then .env on failure
         - fallback_to_env=False -> OpenBao only, empty dict on failure
 
-    After creation, injects all resolved secrets into os.environ so that
-    code paths using os.getenv() directly (e.g., models.get_api_key())
-    can access OpenBao secrets without any upstream code changes.
-
     Thread-safe: uses a lock to ensure single initialization.
     """
     global _manager, _init_attempted
 
     if _manager is not None:
-        # Fast path — already initialized and returned regardless of
-        # current OpenBao availability. The manager handles fallback.
-        # Ensure env injection happened (covers edge case of reset())
-        _inject_secrets_to_env(_manager)
+        # Fast path -- already initialized.
         return _manager
 
     if _init_attempted:
-        # Already tried and failed — don't retry on every call
+        # Already tried and failed -- don't retry on every call.
         return None
 
     with _init_lock:
@@ -189,7 +183,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 logger.warning("OpenBao config validation errors: %s", errors)
                 return None
 
-            # Load the client and manager modules
+            # Load the client module
             client_path = os.path.join(plugin_dir, "helpers", "openbao_client.py")
             spec_client = importlib.util.spec_from_file_location("openbao_client", client_path)
             if spec_client is None:
@@ -204,18 +198,16 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 logger.warning("Failed to load client module: %s", e)
                 return None
 
+            # Load the manager module
             manager_path = os.path.join(plugin_dir, "helpers", "openbao_secrets_manager.py")
             spec_mgr = importlib.util.spec_from_file_location("openbao_manager", manager_path)
             if spec_mgr is None:
                 logger.warning("Could not load manager module from %s", manager_path)
                 return None
             mgr_mod = importlib.util.module_from_spec(spec_mgr)
-
-            # Inject dependencies for the manager module
-            # Both the logical import names AND the spec names must be in
-            # sys.modules — Python 3.13's @dataclass looks up cls.__module__
-            # and will fail with 'NoneType has no attribute __dict__' if the
-            # module is not registered.
+            # Both the logical import names AND the spec names must be in sys.modules --
+            # Python 3.13's @dataclass looks up cls.__module__ and will fail with
+            # 'NoneType has no attribute __dict__' if the module is not registered.
             sys.modules[spec_mgr.name] = mgr_mod
             try:
                 spec_mgr.loader.exec_module(mgr_mod)
@@ -237,17 +229,13 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             else:
                 if config.fallback_to_env:
                     logger.warning(
-                        "OpenBao unavailable — manager will use .env fallback"
+                        "OpenBao unavailable -- manager will use .env fallback"
                     )
                 else:
                     logger.warning(
-                        "OpenBao unavailable and fallback_to_env=False — "
+                        "OpenBao unavailable and fallback_to_env=False -- "
                         "secrets will be empty until OpenBao recovers"
                     )
-
-            # Bridge: inject secrets into os.environ for direct os.getenv() consumers
-            # This is critical for models.get_api_key() which bypasses SecretsManager
-            _inject_secrets_to_env(_manager)
 
             return _manager
 
@@ -259,10 +247,22 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             return None
 
 
-def reset():
-    """Reset the singleton — for testing."""
-    global _manager, _init_attempted, _env_injected
+def reset() -> None:
+    """Reset the singleton -- for testing or explicit teardown.
+
+    Also stops the AuthProxy daemon if one was registered by
+    _10_start_auth_proxy (stored in the module-level _proxy_instance).
+    """
+    global _manager, _init_attempted, _proxy_instance
     with _init_lock:
+        # Stop the auth proxy daemon if one is running
+        if _proxy_instance is not None:
+            try:
+                _proxy_instance.stop()
+                logger.debug("AuthProxy stopped via factory_common.reset()")
+            except Exception as exc:
+                logger.debug("AuthProxy stop error during reset: %s", exc)
+            _proxy_instance = None
+
         _manager = None
         _init_attempted = False
-        _env_injected = False

@@ -1,6 +1,6 @@
 """Auto-install plugin dependencies on first load.
 
-Ensures hvac, tenacity, and circuitbreaker are available in the
+Ensures hvac, tenacity, circuitbreaker, and aiohttp are available in the
 A0 runtime venv without requiring manual pip install.
 """
 import importlib
@@ -14,6 +14,7 @@ _REQUIRED = [
     ("hvac", "hvac>=2.1.0"),
     ("tenacity", "tenacity>=8.2.0"),
     ("circuitbreaker", "circuitbreaker>=2.0.0"),
+    ("aiohttp", "aiohttp>=3.9.0"),
 ]
 
 _installed = False

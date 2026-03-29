@@ -1,0 +1,177 @@
+# Copyright 2024 Deimos AI
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Backstop: mask real secret values before any message enters agent history.
+
+Hook:   hist_add_before  (synchronous)
+Priority: 10
+
+Purpose
+-------
+This is the final safety net in the combined secret-prevention architecture.
+Even if an upstream path (tool output, LLM response, tool_result text) somehow
+carries a live secret value before reaching agent history, this extension
+scans the content and replaces every known secret value with its placeholder
+representation, constructed via helpers.secrets.alias_for_key().
+
+This ensures that:
+    1. The LLM never sees real credential values in its context window.
+    2. Persistent history files (.json) never contain plaintext secrets.
+    3. The log / UI display layer receives only masked representations.
+
+Content structures handled
+--------------------------
+The ``content`` value in ``content_data`` can take several forms depending on
+which hist_add_* method called hist_add_message():
+
+    str  -- plain text (AI response, warning messages)
+    dict -- tool result: {"tool_name": ..., "tool_result": ..., ...}
+    list -- list of message dicts (used by some history implementations)
+
+All string leaves are scanned.  Non-string values are left untouched.
+
+Secret lookup
+-------------
+Secrets are loaded via get_openbao_manager().load_secrets(), which is cached
+inside the manager singleton so repeated calls are O(1) after the first load.
+If the manager is unavailable the extension is a no-op -- it never raises.
+
+Placeholder construction
+------------------------
+alias_for_key(key) is imported from helpers.secrets and constructs the
+canonical placeholder representation for a given key name.  The literal
+placeholder pattern string does NOT appear in this file.
+"""
+from __future__ import annotations
+
+import logging
+import sys
+from typing import Any
+
+from helpers.extension import Extension
+from helpers.secrets import alias_for_key
+
+logger = logging.getLogger(__name__)
+
+# Minimum secret value length to scan for.  Very short values (< 4 chars)
+# are skipped to avoid false-positive replacements in normal text.
+_MIN_SECRET_LEN = 4
+
+
+class OpenBaoMaskHistory(Extension):
+    """Replace live secret values with placeholders before history storage.
+
+    Synchronous hook -- hist_add_before is called via call_extensions_sync.
+    The execute() method MUST NOT be a coroutine.
+    """
+
+    def execute(self, content_data: dict = None, ai: bool = False, **kwargs) -> None:  # noqa: FBT001
+        if content_data is None:
+            return
+
+        content = content_data.get("content")
+        if not content:
+            return
+
+        try:
+            secrets = self._load_secrets()
+            if not secrets:
+                return
+
+            masked = _mask_content(content, secrets)
+            if masked is not content:  # only update if something changed
+                content_data["content"] = masked
+
+        except Exception as exc:  # pylint: disable=broad-except
+            # Never block history writes -- log and continue
+            logger.debug("OpenBaoMaskHistory: error during masking: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Secret loading
+    # ------------------------------------------------------------------
+
+    def _load_secrets(self) -> dict:
+        """Return the secrets dict from the OpenBao manager, or {} on failure."""
+        try:
+            fc = sys.modules.get("openbao_secrets_factory_common")
+            if fc is None:
+                return {}
+            manager = fc.get_openbao_manager()
+            if manager is None:
+                return {}
+            secrets = manager.load_secrets()
+            return secrets or {}
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug("OpenBaoMaskHistory: could not load secrets: %s", exc)
+            return {}
+
+
+# ---------------------------------------------------------------------------
+# Content masking helpers (module-level for testability)
+# ---------------------------------------------------------------------------
+
+def _mask_string(text: str, secrets: dict) -> str:
+    """Replace all known secret values in *text* with their placeholder aliases.
+
+    Iterates over the secrets dict and replaces each value whose length is
+    at least _MIN_SECRET_LEN with alias_for_key(key).  The alias is built by
+    helpers.secrets.alias_for_key() -- the literal placeholder format is NOT
+    hardcoded here.
+
+    Returns the same object if no replacements were made (identity comparison
+    safe for the caller to check with ``is``).
+    """
+    result = text
+    for key, value in secrets.items():
+        if not value or len(value) < _MIN_SECRET_LEN:
+            continue
+        if value in result:
+            replacement = alias_for_key(key)
+            result = result.replace(value, replacement)
+    return result
+
+
+def _mask_content(content: Any, secrets: dict) -> Any:
+    """Recursively mask secrets in all string leaves of *content*.
+
+    Handles:
+        str  -- masked directly
+        dict -- all string values masked recursively
+        list -- each element masked recursively
+        other -- returned unchanged
+    """
+    if isinstance(content, str):
+        return _mask_string(content, secrets)
+
+    if isinstance(content, dict):
+        changed = False
+        result: dict = {}
+        for k, v in content.items():
+            new_v = _mask_content(v, secrets)
+            result[k] = new_v
+            if new_v is not v:
+                changed = True
+        return result if changed else content
+
+    if isinstance(content, list):
+        changed = False
+        result_list: list = []
+        for item in content:
+            new_item = _mask_content(item, secrets)
+            result_list.append(new_item)
+            if new_item is not item:
+                changed = True
+        return result_list if changed else content
+
+    # Non-string, non-collection: pass through unchanged
+    return content
