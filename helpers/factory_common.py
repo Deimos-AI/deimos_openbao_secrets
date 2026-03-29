@@ -62,8 +62,8 @@ def _inject_secrets_to_env(manager: "SecretsManager") -> None:
         for key, value in secrets.items():
             if not value:  # Skip empty values
                 continue
-            if key in os.environ:
-                # Don't override existing env vars — explicit env takes precedence
+            if key in os.environ and os.environ[key]:
+                # Don't override existing non-empty env vars — explicit env takes precedence
                 skipped.append(key)
             else:
                 os.environ[key] = value
