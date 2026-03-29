@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Literal, Optional
 logger = logging.getLogger(__name__)
 
 ENV_PREFIX = "OPENBAO_"
-SETTINGS_FILE = "settings.json"
+SETTINGS_FILE = "config.json"
 
 # Fields that contain credentials — never log their values
 _CREDENTIAL_FIELDS = frozenset({"role_id", "secret_id", "token"})
