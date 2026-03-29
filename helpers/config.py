@@ -42,10 +42,11 @@ _FIELD_TO_ENV: Dict[str, str] = {
     "circuit_breaker_threshold": "CB_THRESHOLD",
     "circuit_breaker_recovery": "CB_RECOVERY",
     "fallback_to_env": "FALLBACK_TO_ENV",
+    "fallback_to_env_on_error": "FALLBACK_TO_ENV_ON_ERROR",
 }
 
 # Fields with boolean type
-_BOOL_FIELDS = frozenset({"enabled", "tls_verify", "fallback_to_env"})
+_BOOL_FIELDS = frozenset({"enabled", "tls_verify", "fallback_to_env", "fallback_to_env_on_error"})
 # Fields with int type
 _INT_FIELDS = frozenset({"cache_ttl", "retry_attempts", "circuit_breaker_threshold", "circuit_breaker_recovery"})
 # Fields with float type
@@ -73,6 +74,8 @@ class OpenBaoConfig:
         circuit_breaker_threshold: Failures before circuit opens.
         circuit_breaker_recovery: Seconds before circuit half-opens.
         fallback_to_env: Fall back to .env files when OpenBao is unavailable.
+        fallback_to_env_on_error: When False (default), raise OpenBaoUnavailableError on
+            unavailability. When True, allow graceful .env fallback (opt-in).
     """
 
     enabled: bool = False
@@ -91,6 +94,7 @@ class OpenBaoConfig:
     circuit_breaker_threshold: int = 5
     circuit_breaker_recovery: int = 60
     fallback_to_env: bool = True
+    fallback_to_env_on_error: bool = False
 
 
 def _parse_value(field_name: str, raw: Any) -> Any:

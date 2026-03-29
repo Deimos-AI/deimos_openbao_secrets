@@ -19,6 +19,19 @@ from openbao_client import OpenBaoClient
 logger = logging.getLogger(__name__)
 
 
+class OpenBaoUnavailableError(RuntimeError):
+    """Raised when OpenBao is unreachable and fallback is not permitted.
+
+    Raised in ``load_secrets()`` when ``_load_from_openbao()`` returns None
+    (connection failure, circuit breaker open, etc.) and
+    ``config.fallback_to_env_on_error`` is ``False`` (the default — hard-fail mode).
+
+    To suppress this error and allow graceful .env fallback, set
+    ``fallback_to_env_on_error: true`` in the plugin config or via the
+    ``OPENBAO_FALLBACK_TO_ENV_ON_ERROR=true`` environment variable.
+    """
+
+
 class OpenBaoSecretsManager(SecretsManager):
     """SecretsManager subclass backed by OpenBao KV v2.
 
@@ -144,7 +157,16 @@ class OpenBaoSecretsManager(SecretsManager):
                     self._fallback_active = False
                 return secrets
 
-            # Fallback to .env files
+            # Gate fallback on opt-in flag — hard-fail by default
+            if not self._config.fallback_to_env_on_error:
+                raise OpenBaoUnavailableError(
+                    f"OpenBao is unavailable at {self._config.url!r}. "
+                    "Set fallback_to_env_on_error=true in plugin config (or via "
+                    "OPENBAO_FALLBACK_TO_ENV_ON_ERROR=true env var) to allow "
+                    ".env fallback, or ensure OpenBao is reachable."
+                )
+
+            # Fallback permitted (fallback_to_env_on_error=true) — use .env
             if self._config.fallback_to_env:
                 if not self._fallback_active:
                     logger.warning(
@@ -153,10 +175,10 @@ class OpenBaoSecretsManager(SecretsManager):
                     self._fallback_active = True
                 return self._load_from_env_fallback()
 
-            # No fallback configured
+            # Fallback opted-in but fallback_to_env also disabled
             logger.error(
-                "OpenBao unavailable and fallback_to_env=False — "
-                "returning empty secrets"
+                "OpenBao unavailable, fallback_to_env_on_error=True but "
+                "fallback_to_env=False — returning empty secrets"
             )
             return {}
 
@@ -293,6 +315,7 @@ class OpenBaoSecretsManager(SecretsManager):
             "enabled": self._config.enabled,
             "fallback_active": self._fallback_active,
             "fallback_to_env": self._config.fallback_to_env,
+            "fallback_to_env_on_error": self._config.fallback_to_env_on_error,
             "secrets_count": len(self.load_secrets()),
             "openbao": None,
             "cache_age": None,
