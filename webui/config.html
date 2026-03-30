@@ -309,6 +309,55 @@ DB_PASSWORD=hunter2
                     </div>
                 </div>
 
+
+                <!-- ============= MCP CREDENTIAL ROTATION (G-05) ============= -->
+                <div x-data="{ mcpRefreshing: false, mcpResult: '', mcpOk: true }" style="margin-top:24px;">
+                    <div class="section-title">MCP Credential Rotation</div>
+                    <div class="section-description">
+                        Re-fetches live credentials from OpenBao and reconnects MCP servers.
+                        Use after rotating secrets in OpenBao. Files on disk keep their
+                        <code>&#x27E6;bao:v1:&#x27E7;</code> placeholders &mdash;
+                        only the running MCP client is updated with fresh values.
+                    </div>
+
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Refresh MCP Credentials</div>
+                            <div class="field-description">
+                                <span x-show="mcpResult"
+                                      :style="mcpOk ? 'color:#4CAF50;' : 'color:#ff6b6b;'"
+                                      x-text="mcpResult"></span>
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <button class="btn btn-field" :disabled="mcpRefreshing"
+                                @click="
+                                    mcpRefreshing = true; mcpResult = 'Refreshing...';
+                                    fetch('/api/plugins/deimos_openbao_secrets/rotate_mcp', {
+                                        method: 'POST',
+                                        credentials: 'same-origin',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({})
+                                    })
+                                    .then(r => r.json())
+                                    .then(d => {
+                                        mcpRefreshing = false; mcpOk = d.success;
+                                        mcpResult = d.success
+                                            ? ('✅ ' + (d.message || 'Done'))
+                                            : ('❌ ' + (d.error || 'Failed'));
+                                    })
+                                    .catch(e => {
+                                        mcpRefreshing = false; mcpOk = false;
+                                        mcpResult = '❌ ' + e.message;
+                                    });
+                                "
+                            >
+                                <span x-show="!mcpRefreshing">&#x21BB; Refresh MCP Credentials</span>
+                                <span x-show="mcpRefreshing">Refreshing&hellip;</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </template>
     </div>
