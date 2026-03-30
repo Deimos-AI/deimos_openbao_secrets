@@ -1,0 +1,30 @@
+# deimos_openbao_secrets -- pre-commit hooks
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      - id: openbao-secret-surface-scan
+        name: "OpenBao -- secret surface scan (new targets)"
+        entry: python tests/ci_secret_surface_scan.py --fail-on-new
+        language: python
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, pre-push]
+
+      - id: openbao-no-raw-credentials
+        name: "OpenBao -- no raw credentials in JSON"
+        entry: python tests/ci_secret_surface_scan.py --fail-on-new
+        language: python
+        pass_filenames: false
+        types: [json]
+        stages: [pre-commit]
+
+      - id: openbao-placeholder-scope
+        name: "OpenBao -- bao placeholder scope enforcement"
+        entry: python tests/ci_secret_surface_scan.py --fail-on-new
+        language: python
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]

@@ -79,3 +79,18 @@ jobs:
       - name: Run tests
         run: |
           cd tests && python -m pytest -v .
+
+  secret-surface-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run secret surface scan
+        run: python tests/ci_secret_surface_scan.py --fail-on-new --repo-root .
+      - name: Run placeholder mask tests
+        run: |
+          pip install pytest
+          pytest tests/test_secret_surfaces.py tests/test_placeholder_mask.py -v
