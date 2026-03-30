@@ -55,6 +55,7 @@ placeholder pattern string does NOT appear in this file.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from typing import Any
 
@@ -66,6 +67,56 @@ logger = logging.getLogger(__name__)
 # Minimum secret value length to scan for.  Very short values (< 4 chars)
 # are skipped to avoid false-positive replacements in normal text.
 _MIN_SECRET_LEN = 4
+
+
+# ---------------------------------------------------------------------------
+# ⟦bao:v1:…⟧ placeholder redaction (ADR-04 / R-08 premortem mitigation)
+# ---------------------------------------------------------------------------
+# ⟦bao:vN:path⟧ tokens written by Surface A/B encode OpenBao KV v2 paths.
+# Exposing those paths to the LLM leaks internal vault topology and may confuse
+# resolution logic.  Replace the full token with an inert safe form BEFORE any
+# content reaches agent history.
+#
+# Pattern covers all ⟦bao:vN:…⟧ versions (v[0-9]+ is future-proof).
+# Runs BEFORE _mask_content and BEFORE the "if not secrets: return" guard
+# so bao tokens are stripped even when OpenBao is unavailable.
+_BAO_PLACEHOLDER_RE = re.compile(r"⟦bao:v[0-9]+:[^⟧]*⟧")
+_BAO_REDACTED = "[bao-ref:REDACTED]"
+
+
+def _redact_bao_placeholders(content):
+    """Replace ⟦bao:vN:…⟧ tokens with [bao-ref:REDACTED] (ADR-04/R-08).
+
+    Runs BEFORE secret-value masking so vault-path topology never reaches
+    the LLM context window.  Handles str, dict, list — same surfaces as
+    _mask_content.  Must be called even when secrets dict is empty.
+    """
+    if isinstance(content, str):
+        if "⟦bao:" in content:  # fast check before regex
+            return _BAO_PLACEHOLDER_RE.sub(_BAO_REDACTED, content)
+        return content
+
+    if isinstance(content, dict):
+        changed = False
+        result = {}
+        for k, v in content.items():
+            new_v = _redact_bao_placeholders(v)
+            result[k] = new_v
+            if new_v is not v:
+                changed = True
+        return result if changed else content
+
+    if isinstance(content, list):
+        changed = False
+        result_list = []
+        for item in content:
+            new_item = _redact_bao_placeholders(item)
+            result_list.append(new_item)
+            if new_item is not item:
+                changed = True
+        return result_list if changed else content
+
+    return content
 
 
 class OpenBaoMaskHistory(Extension):
@@ -84,6 +135,14 @@ class OpenBaoMaskHistory(Extension):
             return
 
         try:
+            # ADR-04 / R-08: redact ⟦bao:vN:…⟧ placeholders BEFORE secret masking.
+            # Runs even when secrets dict is empty — vault-path topology must
+            # never reach the LLM regardless of OpenBao availability.
+            redacted = _redact_bao_placeholders(content)
+            if redacted is not content:
+                content = redacted
+                content_data["content"] = content
+
             secrets = self._load_secrets()
             if not secrets:
                 return

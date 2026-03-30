@@ -73,6 +73,18 @@ from helpers.secrets import ALIAS_PATTERN as PLACEHOLDER_PATTERN
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# ⟦bao:⟧ placeholder guard constant (ADR-04 / R-08 premortem mitigation)
+# ---------------------------------------------------------------------------
+# ⟦bao:vN:path⟧ tokens are OpenBao KV v2 path references — NOT expandable
+# shell variables.  If one appears in a code_execution tool arg it means the
+# consumer forgot to call resolve_plugin_config() or
+# resolve_mcp_server_headers() before invoking the tool.  Silently passing a
+# literal placeholder as a credential produces a hard-to-debug auth failure.
+# Fail loudly here instead (fail-closed, R-08 mitigations 4+5, ADR-04).
+# This check MUST run BEFORE any §§secret() expansion logic.
+_BAO_SHELL_PREFIX: str = "⟦bao:"  # U+27E6 + 'bao:'
+
+# ---------------------------------------------------------------------------
 # Lazy import of CodeExecution class
 # ---------------------------------------------------------------------------
 
@@ -104,6 +116,37 @@ def _get_code_execution_class():
             exc,
         )
     return _CodeExecution
+
+
+# ---------------------------------------------------------------------------
+# ⟦bao:⟧ placeholder guard helper (module-level for testability)
+# ---------------------------------------------------------------------------
+
+def _guard_bao_placeholders(tool_args: dict) -> None:
+    """Raise ValueError if any shell tool arg contains a ⟦bao:⟧ placeholder.
+
+    ⟦bao:vN:path⟧ tokens cannot be resolved by the shell.  Their presence
+    in shell tool args is a SECURITY event: fail-closed rather than silently
+    passing a literal placeholder as a credential value (ADR-04, R-08
+    premortem mitigations 4+5).  Must be called BEFORE §§secret() expansion.
+    """
+    for key, value in tool_args.items():
+        if not isinstance(value, str):
+            continue
+        # Fast check before any further processing
+        if _BAO_SHELL_PREFIX not in value:
+            continue
+        # At least one ⟦bao: token present — SECURITY violation
+        logger.error(
+            "SECURITY: ⟦bao:⟧ placeholder detected in shell tool args "
+            "for key %r — this placeholder cannot be expanded in shell context. "
+            "Resolve via resolve_plugin_config() before passing to shell.",
+            key,
+        )
+        raise ValueError(
+            f"Unresolved ⟦bao:⟧ placeholder in shell argument {key!r} "
+            f"— secret not injected"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +183,10 @@ class OpenBaoShellTransform(Extension):
             # do not yet pass the tool= kwarg.
             if tool_name != "code_execution_tool":
                 return
+
+        # ── Guard: ⟦bao:⟧ placeholders MUST NOT reach the shell (ADR-04/R-08) ──
+        # Runs BEFORE §§secret() expansion — fail-closed on unresolved placeholder.
+        _guard_bao_placeholders(tool_args)
 
         # ── Transform: replace placeholders with $KEY_NAME references ──────
         _transform_args_inplace(tool_args)
