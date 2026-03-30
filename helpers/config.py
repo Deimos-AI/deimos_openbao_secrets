@@ -43,6 +43,8 @@ _FIELD_TO_ENV: Dict[str, str] = {
     "circuit_breaker_recovery": "CB_RECOVERY",
     "fallback_to_env": "FALLBACK_TO_ENV",
     "fallback_to_env_on_error": "FALLBACK_TO_ENV_ON_ERROR",
+    "vault_namespace": "VAULT_NAMESPACE",
+    "vault_token_file": "VAULT_TOKEN_FILE",
 }
 
 # Fields with boolean type
@@ -95,6 +97,8 @@ class OpenBaoConfig:
     circuit_breaker_recovery: int = 60
     fallback_to_env: bool = True
     fallback_to_env_on_error: bool = False
+    vault_namespace: str = ""
+    vault_token_file: str = ""
 
 
 def _parse_value(field_name: str, raw: Any) -> Any:
@@ -177,6 +181,20 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
                 _safe_log_field(field_name, parsed, f"env:{env_var}")
             except (ValueError, TypeError) as exc:
                 logger.warning("Invalid value for env %s: %s", env_var, exc)
+
+    # Bootstrap token file takes precedence over inline vault_token
+    token_file = getattr(config, 'vault_token_file', '') or ''
+    if token_file:
+        token_path = Path(token_file)
+        if token_path.exists():
+            file_token = token_path.read_text().strip()
+            if file_token:
+                config.token = file_token
+                logger.debug("vault_token loaded from vault_token_file")
+            else:
+                logger.warning("vault_token_file exists but is empty — using inline vault_token")
+        else:
+            logger.warning("vault_token_file path not found: %s — using inline vault_token", token_file)
 
     return config
 

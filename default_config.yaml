@@ -12,3 +12,34 @@ circuit_breaker_threshold: 5
 circuit_breaker_recovery: 60
 fallback_to_env: true
 fallback_to_env_on_error: false
+
+# Namespace support (OpenBao 2.5.x OSS — confirmed working)
+# Empty string = root namespace (default, backwards compatible)
+vault_namespace: ""
+
+# Bootstrap token file path (preferred over inline token for production)
+# If set, token is read from this file at startup (chmod 600 recommended)
+# Falls back to inline vault_token config value if empty or file missing
+vault_token_file: ""
+
+# Surface A — Plugin config secret field interception
+# fnmatch patterns matched against plugin config dict keys (case-insensitive)
+# Matched fields containing string values are extracted to OpenBao on save
+secret_field_patterns:
+  - "*key*"
+  - "*token*"
+  - "*secret*"
+  - "*password*"
+  - "*auth*"
+
+# Surface B — MCP server header scan patterns
+# Header keys in mcpServers[*].headers matching these names are extracted to OpenBao
+mcp_header_scan_patterns:
+  - "Authorization"
+  - "X-API-Key"
+  - "X-Auth-Token"
+
+# Surface B — explicit MCP file scan targets (never wildcards — must be explicit)
+mcp_scan_paths:
+  - "**/mcp_servers.json"
+  - "**/.a0proj/mcp_servers.json"

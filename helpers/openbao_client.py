@@ -142,6 +142,12 @@ class OpenBaoClient:
                 timeout=self._config.timeout,
             )
 
+            # Apply X-Vault-Namespace header to ALL requests when namespace is configured
+            if getattr(self._config, 'vault_namespace', None):
+                headers = {}
+                headers['X-Vault-Namespace'] = self._config.vault_namespace
+                self._client.session.headers.update(headers)
+
             if self._config.auth_method == "approle":
                 self._auth_approle()
             elif self._config.auth_method == "token":
