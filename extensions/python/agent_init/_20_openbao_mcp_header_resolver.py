@@ -1,0 +1,258 @@
+# Copyright 2024 DeimosAI
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Surface B consume — MCP server header credential resolver.
+
+This module provides:
+
+1. **``OpenBaoMcpHeaderResolver``** (Extension class, agent_init hook)
+   Registered under ``agent_init`` at priority 20.  Its ``execute()`` is a
+   no-op that ensures the module is imported and ``resolve_mcp_server_headers``
+   is available as a callable at agent start-up.
+
+2. **``resolve_mcp_server_headers()``** (module-level async function)
+   Called by ``helpers/mcp_handler.py`` via ``call_extensions_async`` at MCP
+   HTTP transport time (PR-C hook from Step 1).  Walks the headers dict and
+   resolves every ``⟦bao:v1:<path>⟧`` placeholder to its live OpenBao
+   value just before the connection to the MCP server is opened.
+
+Design decisions
+----------------
+ADR-01 (fail-open on resolution failure)
+    If a vault read fails the placeholder is left in the returned dict and a
+    warning is logged.  No exception is raised — the MCP transport will
+    produce an auth error, which is visible and debuggable without crashing
+    the agent.
+
+Fast path
+    If no header value starts with ``⟦bao:`` the function returns ``None``
+    immediately, signalling the framework to use the original headers
+    unchanged.  This makes the common case (unmanaged credentials) zero-cost.
+
+Immutability
+    The input *headers* dict is **never mutated** — a copy is always
+    returned when placeholders are found.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import sys
+from typing import Any, Optional
+
+from helpers.extension import Extension
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Placeholder tokens — must match Surface B write side exactly
+# ---------------------------------------------------------------------------
+_PLACEHOLDER_PREFIX: str = "⟦bao:v1:"
+_PLACEHOLDER_SUFFIX: str = "⟧"
+# Fast-path prefix — any ⟦bao: version is a placeholder
+_ANY_BAO_PREFIX: str = "⟦bao:"
+
+
+# ---------------------------------------------------------------------------
+# Manager singleton — same pattern as _10_openbao_plugin_config.py
+# ---------------------------------------------------------------------------
+
+def _get_manager():
+    """Return the OpenBaoSecretsManager singleton via factory_common, or None."""
+    fc = sys.modules.get("openbao_secrets_factory_common")
+    if fc is None:
+        logger.debug("Surface B resolver: factory_common not loaded")
+        return None
+    try:
+        return fc.get_openbao_manager()
+    except Exception as exc:
+        logger.debug("Surface B resolver: get_openbao_manager() failed: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Vault read helper
+# ---------------------------------------------------------------------------
+
+def _get_hvac(manager):
+    """Return (hvac_client, mount_point) or (None, None)."""
+    bao = getattr(manager, "_bao_client", None)
+    if bao is None:
+        return None, None
+    client = getattr(bao, "_client", None)
+    if client is None:
+        return None, None
+    mount = getattr(getattr(bao, "_config", None), "mount_point", None) or "secret"
+    return client, mount
+
+
+def _vault_read(manager, path: str) -> Optional[dict]:
+    """Read KV v2 data at *path*; returns None on miss or error."""
+    client, mount = _get_hvac(manager)
+    if client is None:
+        return None
+    try:
+        resp = client.secrets.kv.v2.read_secret_version(
+            path=path,
+            mount_point=mount,
+            raise_on_deleted_version=False,
+        )
+        if resp:
+            return resp.get("data", {}).get("data") or {}
+        return None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Extension class (agent_init no-op)
+# ---------------------------------------------------------------------------
+
+class OpenBaoMcpHeaderResolver(Extension):
+    """agent_init (priority 20): ensures resolver module is loaded at startup.
+
+    The ``execute()`` method is a no-op.  Active resolution logic lives in
+    :func:`resolve_mcp_server_headers`, called by ``helpers/mcp_handler.py``
+    via the ``resolve_mcp_server_headers`` hook added in PR-C (Step 1).
+    """
+
+    def execute(self, **kwargs: Any) -> None:  # sync hook
+        logger.debug(
+            "OpenBaoMcpHeaderResolver ready — resolve_mcp_server_headers available"
+        )
+
+
+# ---------------------------------------------------------------------------
+# resolve_mcp_server_headers — module-level hook function
+# ---------------------------------------------------------------------------
+
+async def resolve_mcp_server_headers(
+    agent: Any,
+    server_name: str,
+    headers: dict,
+    **kwargs: Any,
+) -> dict | None:
+    """Resolve ``⟦bao:v1:…⟧`` placeholders in MCP server headers to live values.
+
+    Called by ``helpers/mcp_handler.py`` at MCP HTTP transport time.
+
+    Parameters
+    ----------
+    agent:
+        Active Agent instance (for context; not used directly).
+    server_name:
+        MCP server name as configured in ``mcp_servers.json``.
+    headers:
+        Raw headers dict that may contain ``⟦bao:v1:<path>⟧`` placeholders.
+    **kwargs:
+        Additional context from caller (ignored).
+
+    Returns
+    -------
+    dict | None
+        New dict with placeholders replaced by live vault values, or ``None``
+        if no placeholders were found (fast path — caller uses original dict).
+
+    Notes
+    -----
+    * Input *headers* is **never mutated** — always return a copy.
+    * Fail-open (ADR-01): on vault read failure, warning is logged and the
+      placeholder is left intact.  No exception is raised.
+    """
+    # ── Fast path: return None immediately when no placeholders present ───
+    if not any(
+        isinstance(v, str) and v.startswith(_ANY_BAO_PREFIX)
+        for v in headers.values()
+    ):
+        return None  # framework uses original headers unchanged
+
+    manager = _get_manager()
+    if manager is None:
+        logger.warning(
+            "Surface B resolver: manager unavailable for server %r — "
+            "returning None (original headers used)",
+            server_name,
+        )
+        return None
+
+    if not getattr(manager, "is_available", lambda: False)():
+        logger.warning(
+            "Surface B resolver: OpenBao not available for server %r — "
+            "returning None",
+            server_name,
+        )
+        return None
+
+    # ── Resolve placeholders into a new dict (never mutate input) ─────────
+    resolved = dict(headers)  # shallow copy — values are immutable strings
+
+    for header_key, header_value in headers.items():
+        if not isinstance(header_value, str):
+            continue
+        if not (
+            header_value.startswith(_PLACEHOLDER_PREFIX)
+            and header_value.endswith(_PLACEHOLDER_SUFFIX)
+        ):
+            continue
+
+        # Extract vault path from ⟦bao:v1:<path>⟧
+        vault_path = header_value[
+            len(_PLACEHOLDER_PREFIX) : -len(_PLACEHOLDER_SUFFIX)
+        ]
+
+        try:
+            secret_data = _vault_read(manager, vault_path)
+
+            if secret_data is None:
+                # ADR-01: warn only — keep placeholder, do NOT raise
+                logger.warning(
+                    "Surface B resolver: secret not found at %r "
+                    "(server=%r header=%r) — placeholder unchanged",
+                    vault_path, server_name, header_key,
+                )
+                continue
+
+            if isinstance(secret_data, dict):
+                live_value: Optional[str] = secret_data.get("value")
+                if live_value is None:
+                    # Fallback: first non-index string value
+                    for k, v in secret_data.items():
+                        if k not in ("canonical_path",) and isinstance(v, str):
+                            live_value = v
+                            break
+                if live_value is not None:
+                    resolved[header_key] = live_value
+                    logger.debug(
+                        "Surface B resolver: resolved %r for server %r",
+                        header_key, server_name,
+                    )
+                else:
+                    logger.warning(
+                        "Surface B resolver: no extractable value at %r "
+                        "(server=%r header=%r) — placeholder unchanged",
+                        vault_path, server_name, header_key,
+                    )
+            elif isinstance(secret_data, str):
+                resolved[header_key] = secret_data
+
+        except Exception as exc:
+            # ADR-01: fail-open — log warning, do NOT raise
+            logger.warning(
+                "Surface B resolver: failed to resolve %r "
+                "(server=%r header=%r): %s — placeholder unchanged",
+                vault_path, server_name, header_key, exc,
+            )
+
+    return resolved
