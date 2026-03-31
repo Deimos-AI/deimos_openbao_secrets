@@ -32,7 +32,7 @@ def plugin_dir_with_settings(tmp_path):
         "timeout": 15.0,
         "cache_ttl": 600,
     }
-    (tmp_path / "settings.json").write_text(json.dumps(settings))
+    (tmp_path / "config.json").write_text(json.dumps(settings))
     return str(tmp_path)
 
 
@@ -87,7 +87,7 @@ class TestSettingsFile:
         assert config.cache_ttl == 600
 
     def test_settings_preserves_defaults_for_missing_keys(self, tmp_path, clean_env):
-        (tmp_path / "settings.json").write_text(json.dumps({"enabled": True}))
+        (tmp_path / "config.json").write_text(json.dumps({"enabled": True}))
         config = load_config(str(tmp_path))
         assert config.enabled is True
         assert config.url == "http://127.0.0.1:8200"  # default preserved

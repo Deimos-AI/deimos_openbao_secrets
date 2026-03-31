@@ -56,7 +56,7 @@ _RAW_CRED_RE = re.compile(
 _BAO_PREFIX: str = "⟦bao:"
 
 # Directories allowed to contain bao placeholder tokens
-_ALLOWED_BAO_DIRS: tuple[str, ...] = ("extensions/", "tests/")
+_ALLOWED_BAO_DIRS: tuple[str, ...] = ("extensions/", "tests/", "api/")
 
 # Path prefixes excluded from all scans
 _EXCLUDE_PREFIXES: tuple[str, ...] = (
