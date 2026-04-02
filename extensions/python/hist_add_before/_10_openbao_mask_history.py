@@ -57,6 +57,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from helpers.extension import Extension
@@ -160,7 +161,14 @@ class OpenBaoMaskHistory(Extension):
     # ------------------------------------------------------------------
 
     def _load_secrets(self) -> dict:
-        """Return the secrets dict from the OpenBao manager, or {} on failure."""
+        """Return the combined global + project secrets dict for masking.
+
+        Loads global secrets from secret/data/agentzero.
+        When an active project is detected, also loads project-specific secrets
+        and merges them — project values overwrite global on key collision.
+        Returns {} on any error — never raises, never blocks history writes.
+        PSK-005: extends pre-PSK global-only masking to cover project secrets.
+        """
         try:
             fc = sys.modules.get("openbao_secrets_factory_common")
             if fc is None:
@@ -168,12 +176,31 @@ class OpenBaoMaskHistory(Extension):
             manager = fc.get_openbao_manager()
             if manager is None:
                 return {}
-            secrets = manager.load_secrets()
-            return secrets or {}
+
+            # AC-01: load global secrets (unchanged pre-PSK)
+            global_secrets = manager.load_secrets() or {}
+
+            # AC-02: detect active project and derive slug
+            project = getattr(self.agent.context, 'project', None) or ''
+            project_slug = Path(project).name if project else None
+
+            # AC-03: load project secrets when project is active
+            if project_slug:
+                project_secrets = manager.load_project_secrets(project_slug)
+            else:
+                project_secrets = {}
+
+            # AC-04: merge — project values overwrite global on collision
+            if project_secrets:
+                combined = {**global_secrets, **project_secrets}
+            else:
+                combined = global_secrets
+
+            return combined
+
         except Exception as exc:  # pylint: disable=broad-except
             logger.debug("OpenBaoMaskHistory: could not load secrets: %s", exc)
             return {}
-
 
 # ---------------------------------------------------------------------------
 # Content masking helpers (module-level for testability)
