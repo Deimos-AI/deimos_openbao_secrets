@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 from circuitbreaker import CircuitBreakerError
 from helpers.secrets import SecretsManager, alias_for_key, DEFAULT_SECRETS_FILE
-from openbao_config import OpenBaoConfig
+from openbao_config import OpenBaoConfig, resolve_project_path
 from openbao_client import OpenBaoClient
 
 logger = logging.getLogger(__name__)
@@ -130,6 +130,44 @@ class OpenBaoSecretsManager(SecretsManager):
         if not self._bao_client:
             return False
         return self._bao_client.is_connected()
+
+    def get_secret(self, key: str, project_slug: Optional[str] = None) -> Optional[str]:
+        """Resolve a single secret with project-first, global-fallback lookup.
+
+        PSK resolution rule:
+            1. project_slug None/empty: global only (backward compat — AC-01)
+            2. project_slug set: check project vault path first (AC-03/05)
+               - Found -> return project value (AC-04)
+               - Not found -> fall back to global (AC-05)
+            3. Return global value, or None if absent from both
+            4. _bao_client None -> return None without raising (AC-06)
+
+        Satisfies: PSK-003 AC-01 through AC-06
+        """
+        if not self._bao_client:
+            return None  # AC-06
+        if not project_slug:
+            return self._bao_client.read_secret(key)  # AC-01: global only
+        project_path = resolve_project_path(self._config, project_slug)  # AC-02, AC-05
+        project_value = self._bao_client.get_secret(key, path_override=project_path)  # AC-03
+        if project_value is not None:
+            logger.debug("PSK: key %r from project path %r", key, project_path)
+            return project_value  # AC-03: project value found
+        logger.debug("PSK: key %r not in %r — global fallback", key, project_path)
+        return self._bao_client.read_secret(key)  # AC-04: global fallback
+
+    def load_project_secrets(self, project_slug: str) -> Dict[str, str]:
+        """Load all secrets from the project-specific vault path (non-caching).
+
+        Used by hist_add_before masking (PSK-005) to build combined masking dict.
+        Returns {} if project_slug empty, _bao_client None, or any error.
+
+        Satisfies: PSK-003 AC-07, AC-08
+        """
+        if not self._bao_client or not project_slug:
+            return {}  # AC-08
+        project_path = resolve_project_path(self._config, project_slug)  # AC-07
+        return self._bao_client.read_all_from_path(project_path)  # AC-07
 
     def load_secrets(self) -> Dict[str, str]:
         """Load secrets from OpenBao with .env fallback.
