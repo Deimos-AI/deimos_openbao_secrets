@@ -26,56 +26,15 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
-from typing import Optional
 
 from helpers.api import ApiHandler, Request, Response
+from helpers.vault_io import _get_manager, _get_hvac, _vault_read  # REM-002: bare import safe in api/
 
 logger = logging.getLogger(__name__)
 
 # Placeholder tokens -- literal Unicode U+27E6 / U+27E7
 _BAO_PREFIX: str = "⟦bao:v1:"
 _BAO_SUFFIX: str = "⟧"
-
-
-# ---------------------------------------------------------------------------
-# Manager + vault helpers (same pattern as _10_openbao_plugin_config.py)
-# ---------------------------------------------------------------------------
-
-def _get_manager():
-    fc = sys.modules.get("openbao_secrets_factory_common")
-    if fc is None:
-        return None
-    try:
-        return fc.get_openbao_manager()
-    except Exception:
-        return None
-
-
-def _get_hvac(manager):
-    bao = getattr(manager, "_bao_client", None)
-    if bao is None:
-        return None, None
-    client = getattr(bao, "_client", None)
-    if client is None:
-        return None, None
-    mount = getattr(getattr(bao, "_config", None), "mount_point", None) or "secret"
-    return client, mount
-
-
-def _vault_read(manager, path: str) -> Optional[dict]:
-    client, mount = _get_hvac(manager)
-    if client is None:
-        return None
-    try:
-        resp = client.secrets.kv.v2.read_secret_version(
-            path=path, mount_point=mount, raise_on_deleted_version=False
-        )
-        if resp:
-            return resp.get("data", {}).get("data") or {}
-        return None
-    except Exception:
-        return None
 
 
 # ---------------------------------------------------------------------------

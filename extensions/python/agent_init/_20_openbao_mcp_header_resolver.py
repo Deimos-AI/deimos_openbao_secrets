@@ -47,7 +47,9 @@ Immutability
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 import re
 import sys
 from typing import Any, Optional
@@ -56,64 +58,58 @@ from helpers.extension import Extension
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Placeholder tokens — must match Surface B write side exactly
-# ---------------------------------------------------------------------------
-_PLACEHOLDER_PREFIX: str = "⟦bao:v1:"
-_PLACEHOLDER_SUFFIX: str = "⟧"
-# Fast-path prefix — any ⟦bao: version is a placeholder
-_ANY_BAO_PREFIX: str = "⟦bao:"
-
 
 # ---------------------------------------------------------------------------
-# Manager singleton — same pattern as _10_openbao_plugin_config.py
+# vault_io dynamic loader — bypasses A0 helpers/ namespace collision
+# See: helpers/vault_io.py (REM-002)
+# ---------------------------------------------------------------------------
+_VAULT_IO_MODULE = "deimos_openbao_secrets_vault_io"  # MUST NOT start with 'helpers.'
+
+
+def _load_vault_io():
+    """Load helpers/vault_io.py dynamically — bypasses A0 helpers/ namespace collision."""
+    if _VAULT_IO_MODULE not in sys.modules:
+        from helpers.plugins import find_plugin_dir  # A0's helpers.plugins — always safe
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            return None
+        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        if not os.path.exists(path):
+            return None
+        spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_VAULT_IO_MODULE] = mod  # register BEFORE exec_module
+        spec.loader.exec_module(mod)
+    return sys.modules.get(_VAULT_IO_MODULE)
+
+
+# ---------------------------------------------------------------------------
+# Vault I/O stubs — delegate to helpers/vault_io.py (REM-002)
 # ---------------------------------------------------------------------------
 
-def _get_manager():
-    """Return the OpenBaoSecretsManager singleton via factory_common, or None."""
-    fc = sys.modules.get("openbao_secrets_factory_common")
-    if fc is None:
-        logger.debug("Surface B resolver: factory_common not loaded")
-        return None
-    try:
-        return fc.get_openbao_manager()
-    except Exception as exc:
-        logger.debug("Surface B resolver: get_openbao_manager() failed: %s", exc)
-        return None
+def _vio_get_manager():
+    """Delegate to vault_io._get_manager()."""
+    vio = _load_vault_io()
+    return vio._get_manager() if vio else None
 
 
-# ---------------------------------------------------------------------------
-# Vault read helper
-# ---------------------------------------------------------------------------
-
-def _get_hvac(manager):
-    """Return (hvac_client, mount_point) or (None, None)."""
-    bao = getattr(manager, "_bao_client", None)
-    if bao is None:
-        return None, None
-    client = getattr(bao, "_client", None)
-    if client is None:
-        return None, None
-    mount = getattr(getattr(bao, "_config", None), "mount_point", None) or "secret"
-    return client, mount
+def _vio_get_hvac(manager):
+    """Delegate to vault_io._get_hvac()."""
+    vio = _load_vault_io()
+    return vio._get_hvac(manager) if vio else (None, None)
 
 
-def _vault_read(manager, path: str) -> Optional[dict]:
-    """Read KV v2 data at *path*; returns None on miss or error."""
-    client, mount = _get_hvac(manager)
-    if client is None:
-        return None
-    try:
-        resp = client.secrets.kv.v2.read_secret_version(
-            path=path,
-            mount_point=mount,
-            raise_on_deleted_version=False,
-        )
-        if resp:
-            return resp.get("data", {}).get("data") or {}
-        return None
-    except Exception:
-        return None
+def _vio_vault_read(manager, path: str):
+    """Delegate to vault_io._vault_read()."""
+    vio = _load_vault_io()
+    return vio._vault_read(manager, path) if vio else None
+
+
+
+# Assign to names expected by the rest of this file
+_get_manager = _vio_get_manager
+_get_hvac = _vio_get_hvac
+_vault_read = _vio_vault_read
 
 
 # ---------------------------------------------------------------------------

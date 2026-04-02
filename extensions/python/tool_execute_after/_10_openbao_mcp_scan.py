@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -73,81 +74,65 @@ _WRITE_OPS = frozenset({"text_editor:write", "text_editor:patch"})
 
 
 # ---------------------------------------------------------------------------
-# Manager singleton — identical to _10_openbao_plugin_config.py
+# vault_io dynamic loader — bypasses A0 helpers/ namespace collision
+# See: helpers/vault_io.py (REM-002)
+# ---------------------------------------------------------------------------
+_VAULT_IO_MODULE = "deimos_openbao_secrets_vault_io"  # MUST NOT start with 'helpers.'
+
+
+def _load_vault_io():
+    """Load helpers/vault_io.py dynamically — bypasses A0 helpers/ namespace collision."""
+    if _VAULT_IO_MODULE not in sys.modules:
+        from helpers.plugins import find_plugin_dir  # A0's helpers.plugins — always safe
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            return None
+        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        if not os.path.exists(path):
+            return None
+        spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_VAULT_IO_MODULE] = mod  # register BEFORE exec_module
+        spec.loader.exec_module(mod)
+    return sys.modules.get(_VAULT_IO_MODULE)
+
+
+# ---------------------------------------------------------------------------
+# Vault I/O stubs — delegate to helpers/vault_io.py (REM-002)
+# Thin wrappers preserve call signatures so the rest of this file is unchanged.
 # ---------------------------------------------------------------------------
 
-def _get_manager():
-    """Return the OpenBaoSecretsManager singleton via factory_common, or None."""
-    fc = sys.modules.get("openbao_secrets_factory_common")
-    if fc is None:
-        logger.debug("Surface B scan: factory_common not loaded")
-        return None
-    try:
-        return fc.get_openbao_manager()
-    except Exception as exc:
-        logger.debug("Surface B scan: get_openbao_manager() failed: %s", exc)
-        return None
+def _vio_get_manager():
+    """Delegate to vault_io._get_manager()."""
+    vio = _load_vault_io()
+    return vio._get_manager() if vio else None
 
 
-# ---------------------------------------------------------------------------
-# Vault helpers — identical pattern to _10_openbao_plugin_config.py
-# ---------------------------------------------------------------------------
-
-def _get_hvac(manager):
-    """Return (hvac_client, mount_point) or (None, None)."""
-    bao = getattr(manager, "_bao_client", None)
-    if bao is None:
-        return None, None
-    client = getattr(bao, "_client", None)
-    if client is None:
-        return None, None
-    mount = getattr(getattr(bao, "_config", None), "mount_point", None) or "secret"
-    return client, mount
+def _vio_get_hvac(manager):
+    """Delegate to vault_io._get_hvac()."""
+    vio = _load_vault_io()
+    return vio._get_hvac(manager) if vio else (None, None)
 
 
-def _vault_read(manager, path: str) -> Optional[dict]:
-    """Read KV v2 data at *path*; returns None on miss or error."""
-    client, mount = _get_hvac(manager)
-    if client is None:
-        return None
-    try:
-        resp = client.secrets.kv.v2.read_secret_version(
-            path=path,
-            mount_point=mount,
-            raise_on_deleted_version=False,
-        )
-        if resp:
-            return resp.get("data", {}).get("data") or {}
-        return None
-    except Exception:
-        return None
+def _vio_vault_read(manager, path: str):
+    """Delegate to vault_io._vault_read()."""
+    vio = _load_vault_io()
+    return vio._vault_read(manager, path) if vio else None
 
 
-def _vault_write(
-    manager,
-    path: str,
-    data: dict,
-    custom_metadata: Optional[dict] = None,
-) -> None:
-    """Write *data* to KV v2 *path*.  Raises on failure (fail-closed)."""
-    client, mount = _get_hvac(manager)
-    if client is None:
-        raise RuntimeError(
-            f"Surface B scan: hvac client unavailable — cannot write {path!r}"
-        )
-    client.secrets.kv.v2.create_or_update_secret(
-        path=path, secret=data, mount_point=mount
-    )
-    if custom_metadata:
-        try:
-            str_meta = {k: str(v) for k, v in custom_metadata.items()}
-            client.secrets.kv.v2.update_metadata(
-                path=path, custom_metadata=str_meta, mount_point=mount
-            )
-        except Exception as meta_exc:
-            logger.debug(
-                "Surface B scan: metadata write non-fatal for %r: %s", path, meta_exc
-            )
+def _vio_vault_write(manager, path: str, data: dict, custom_metadata=None):
+    """Delegate to vault_io._vault_write()."""
+    vio = _load_vault_io()
+    if vio is None:
+        raise RuntimeError("vault_io not available — cannot write to vault")
+    return vio._vault_write(manager, path, data, custom_metadata)
+
+
+# Assign to names expected by the rest of this file
+_get_manager = _vio_get_manager
+_get_hvac = _vio_get_hvac
+_vault_read = _vio_vault_read
+_vault_write = _vio_vault_write
 
 
 # ---------------------------------------------------------------------------
@@ -173,12 +158,16 @@ def _get_header_patterns() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Path sanitisation
+# Path sanitisation — delegates to helpers/vault_io.py (REM-002)
 # ---------------------------------------------------------------------------
 
-def _sanitize_component(value: str) -> str:
-    """Replace unsafe chars with underscores; strip leading dots."""
-    return re.sub(r"[^a-zA-Z0-9_.-]", "_", value).lstrip(".")
+def _vio_sanitize_component(value: str) -> str:
+    """Delegate to vault_io._sanitize_component()."""
+    vio = _load_vault_io()
+    return vio._sanitize_component(value) if vio else re.sub(r"[^a-zA-Z0-9_.-]", "_", value).lstrip(".")
+
+
+_sanitize_component = _vio_sanitize_component
 
 
 # ---------------------------------------------------------------------------
