@@ -347,6 +347,62 @@ class OpenBaoClient:
         secrets = self.read_all_secrets(mount=mount, path=path)
         return secrets.get(key.upper())
 
+    def get_secret(self, key: str, path_override: Optional[str] = None) -> Optional[str]:
+        """Read a single secret by key, optionally from a non-default vault path.
+
+        PSK support: path_override bypasses the global TTL cache entirely.
+        When None, delegates to read_secret(key) — unchanged pre-PSK behaviour.
+
+        Args:
+            key: Secret key name. Case-insensitive — normalised to uppercase.
+            path_override: Vault path to read from. If None, uses global cache path.
+
+        Returns:
+            Secret value string, or None if key not found, vault path does not
+            exist (InvalidPath — project not provisioned), or any error.
+
+        Satisfies: PSK-002 AC-01, AC-02, AC-03, AC-04
+        """
+        if path_override is None:
+            return self.read_secret(key)  # AC-02: global cache path, unchanged
+
+        mount = self._config.mount_point
+        try:
+            secrets = self._fetch_secrets_resilient(mount, path_override)  # AC-01
+        except hvac.exceptions.InvalidPath:
+            logger.debug("PSK: project vault path not found: %s/%s", mount, path_override)
+            return None  # AC-03: not provisioned is not an error
+        except Exception as exc:
+            logger.debug("PSK: get_secret path_override=%s failed: %s", path_override, exc)
+            return None
+
+        return secrets.get(key.upper())  # AC-04: uppercase normalisation
+
+    def read_all_from_path(self, path: str) -> Dict[str, str]:
+        """Fetch all secrets from a specific vault path without using the global cache.
+
+        Used by the PSK masking layer to load the full project secrets dict.
+        Does NOT read from or write to the global TTL cache.
+
+        Args:
+            path: Vault secrets path (e.g. "agentzero-deimos-openbao-project").
+
+        Returns:
+            Dict mapping uppercase secret key names to string values.
+            Returns {} on InvalidPath, CircuitBreakerError, or any other error.
+
+        Satisfies: PSK-002 AC-05, AC-06
+        """
+        mount = self._config.mount_point
+        try:
+            return self._fetch_secrets_resilient(mount, path)
+        except hvac.exceptions.InvalidPath:
+            logger.debug("PSK: read_all_from_path not found: %s/%s", mount, path)
+            return {}  # AC-06
+        except Exception as exc:
+            logger.debug("PSK: read_all_from_path failed for path=%s: %s", path, exc)
+            return {}
+
     def health_check(self) -> Dict[str, Any]:
         """Check OpenBao server health and seal status.
 
