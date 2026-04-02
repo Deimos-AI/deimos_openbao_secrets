@@ -9,13 +9,13 @@ No LLM is involved at any point.
 """
 import importlib
 import importlib.util
-import json
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 from helpers.api import ApiHandler, Request, Response
+from helpers.config import load_config  # REM-003: canonical config loader (COD-03)
 
 logger = logging.getLogger(__name__)
 
@@ -42,66 +42,20 @@ def _ensure_hvac() -> bool:
         return False
 
 
-def _load_config():
-    """Load plugin config from config.json + default_config.yaml + env vars."""
-    import yaml
-
-    # Defaults
-    defaults = {}
-    default_path = _PLUGIN_DIR / "default_config.yaml"
-    if default_path.exists():
-        with open(default_path) as f:
-            defaults = yaml.safe_load(f) or {}
-
-    # Saved config
-    saved = {}
-    config_path = _PLUGIN_DIR / "config.json"
-    if config_path.exists():
-        try:
-            with open(config_path) as f:
-                saved = json.load(f) or {}
-        except Exception:
-            saved = {}
-
-    # Merge: saved overrides defaults
-    cfg = {**defaults, **saved}
-
-    # Env vars override everything
-    env_map = {
-        "OPENBAO_ENABLED": ("enabled", lambda v: v.lower() in ("true", "1", "yes")),
-        "OPENBAO_URL": ("url", str),
-        "OPENBAO_AUTH_METHOD": ("auth_method", str),
-        "OPENBAO_MOUNT_POINT": ("mount_point", str),
-        "OPENBAO_SECRETS_PATH": ("secrets_path", str),
-        "OPENBAO_FALLBACK_TO_ENV": ("fallback_to_env", lambda v: v.lower() in ("true", "1", "yes")),
-        "OPENBAO_TIMEOUT": ("timeout", float),
-        "OPENBAO_TLS_VERIFY": ("tls_verify", lambda v: v.lower() in ("true", "1", "yes")),
-        "OPENBAO_TLS_CA_CERT": ("tls_ca_cert", str),
-    }
-    for env_key, (cfg_key, converter) in env_map.items():
-        val = os.environ.get(env_key)
-        if val is not None:
-            try:
-                cfg[cfg_key] = converter(val)
-            except (ValueError, TypeError):
-                pass
-
-    return cfg
-
 
 def _get_client():
     """Create an authenticated hvac client from config + env vars."""
     import hvac
 
-    cfg = _load_config()
+    cfg = load_config(str(_PLUGIN_DIR))  # REM-003: canonical config loader replaces _load_config()
 
-    url = cfg.get("url", "")
+    url = cfg.url  # REM-003: attribute access on OpenBaoConfig
     if not url:
         raise RuntimeError("OpenBao URL not configured")
 
-    tls_verify = cfg.get("tls_verify", True)
-    tls_ca_cert = cfg.get("tls_ca_cert", "")
-    timeout = cfg.get("timeout", 10)
+    tls_verify = cfg.tls_verify  # REM-003: attribute access on OpenBaoConfig
+    tls_ca_cert = cfg.tls_ca_cert
+    timeout = cfg.timeout
 
     verify = tls_ca_cert if tls_ca_cert else tls_verify
     client = hvac.Client(url=url, verify=verify, timeout=timeout)
@@ -130,7 +84,7 @@ def _get_client():
 
 def _get_path(cfg, project_name: str = "") -> str:
     """Build the secrets path, optionally scoped to a project."""
-    path = cfg.get("secrets_path", "agentzero")
+    path = cfg.secrets_path  # REM-003: attribute access on OpenBaoConfig
     if project_name:
         path = f"{path}/{project_name}"
     return path
@@ -154,7 +108,7 @@ class SecretsManager(ApiHandler):
 
         import hvac.exceptions
 
-        mount = cfg.get("mount_point", "secret")
+        mount = cfg.mount_point  # REM-003: attribute access on OpenBaoConfig
         project_name = input.get("project_name", "")
         path = _get_path(cfg, project_name)
         action = input.get("action", "")

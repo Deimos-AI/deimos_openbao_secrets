@@ -5,13 +5,13 @@ Endpoint: POST /api/plugins/deimos_openbao_secrets/health
 Verifies connectivity AND credentials using ONLY the configured auth method.
 """
 import importlib
-import json
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 from helpers.api import ApiHandler, Request, Response
+from helpers.config import load_config  # REM-003: canonical config loader (COD-03)
 
 logger = logging.getLogger(__name__)
 
@@ -34,25 +34,6 @@ def _ensure_hvac():
     except Exception as exc:
         logger.error("Failed to install hvac: %s", exc)
         return False
-
-
-def _load_plugin_config():
-    """Load plugin config to get auth_method."""
-    import yaml
-    defaults = {}
-    dp = _PLUGIN_DIR / "default_config.yaml"
-    if dp.exists():
-        with open(dp) as f:
-            defaults = yaml.safe_load(f) or {}
-    saved = {}
-    cp = _PLUGIN_DIR / "config.json"
-    if cp.exists():
-        try:
-            with open(cp) as f:
-                saved = json.load(f) or {}
-        except Exception:
-            saved = {}
-    return {**defaults, **saved}
 
 
 class TestConnection(ApiHandler):
@@ -106,8 +87,8 @@ class TestConnection(ApiHandler):
                     }
 
             # Step 2: Auth using ONLY the configured method
-            plugin_cfg = _load_plugin_config()
-            auth_method = plugin_cfg.get("auth_method", "token")
+            plugin_cfg = load_config(str(_PLUGIN_DIR))  # REM-003: canonical config loader
+            auth_method = plugin_cfg.auth_method  # REM-003: attribute access on OpenBaoConfig (dict→dataclass)
 
             if auth_method == "token":
                 token = os.environ.get("OPENBAO_TOKEN", "")
