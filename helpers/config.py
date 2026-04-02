@@ -34,6 +34,7 @@ _FIELD_TO_ENV: Dict[str, str] = {
     "token": "TOKEN",
     "mount_point": "MOUNT_POINT",
     "secrets_path": "SECRETS_PATH",
+    "vault_project_template": "PROJECT_TEMPLATE",
     "tls_verify": "TLS_VERIFY",
     "tls_ca_cert": "TLS_CA_CERT",
     "timeout": "TIMEOUT",
@@ -68,6 +69,11 @@ class OpenBaoConfig:
         token: Direct token (required if auth_method=\"token\").
         mount_point: KV v2 mount point.
         secrets_path: Path within the mount for secrets.
+        vault_project_template: Vault path template for project-scoped secret overrides.
+            Uses Python str.format() with {project_slug} as the substitution placeholder.
+            The resolved path is checked before secrets_path when a project is active.
+            Overridable via OPENBAO_PROJECT_TEMPLATE env var.
+            Default: "agentzero-{project_slug}".
         tls_verify: Whether to verify TLS certificates.
         tls_ca_cert: Path to CA certificate bundle.
         timeout: HTTP request timeout in seconds.
@@ -88,6 +94,7 @@ class OpenBaoConfig:
     token: str = ""
     mount_point: str = "secret"
     secrets_path: str = "agentzero"
+    vault_project_template: str = "agentzero-{project_slug}"
     tls_verify: bool = True
     tls_ca_cert: str = ""
     timeout: float = 10.0
@@ -239,3 +246,40 @@ def validate_config(config: OpenBaoConfig) -> List[str]:
         errors.append(f"tls_ca_cert path does not exist: {config.tls_ca_cert}")
 
     return errors
+
+
+def resolve_project_path(config: OpenBaoConfig, project_slug: str) -> str:
+    """Resolve the project-specific vault secrets path for the given project slug.
+
+    Formats ``config.vault_project_template`` using Python str.format(),
+    substituting ``{project_slug}`` with the provided identifier.
+
+    This is the single canonical path resolver for the PSK (Project-Scoped Keys)
+    feature. All components that need the project vault path — client, manager,
+    and extensions — import and call this function. Any change to the path format
+    requires exactly one edit here.
+
+    Args:
+        config: Populated OpenBaoConfig instance.
+        project_slug: Project identifier derived from
+            ``Path(agent.context.project).name``.
+            Example: ``"deimos-openbao-project"`` from
+            ``"/a0/usr/projects/deimos-openbao-project"``.
+
+    Returns:
+        Vault secrets path for the project. With the default template
+        ``"agentzero-{project_slug}"`` and slug ``"deimos-openbao-project"``,
+        returns ``"agentzero-deimos-openbao-project"``.
+
+    Example::
+
+        cfg = OpenBaoConfig()
+        path = resolve_project_path(cfg, "deimos-openbao-project")
+        # -> "agentzero-deimos-openbao-project"
+
+        cfg.vault_project_template = "myorg-{project_slug}"
+        path = resolve_project_path(cfg, "alpha")
+        # -> "myorg-alpha"
+    """
+    # AC-03, AC-04: single canonical resolver — format template with project_slug
+    return config.vault_project_template.format(project_slug=project_slug)
