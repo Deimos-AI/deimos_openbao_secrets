@@ -266,3 +266,52 @@ def reset() -> None:
 
         _manager = None
         _init_attempted = False
+
+
+# ---------------------------------------------------------------------------
+# Secret resolution for non-proxy contexts
+# ---------------------------------------------------------------------------
+# Use resolve_secret() for any context that is NOT an LLM API call
+# (git, HTTP APIs, direct tool use). Do not fetch from OpenBao directly.
+
+
+def resolve_secret(key: str, project_slug: Optional[str] = None) -> Optional[str]:
+    """Resolve the real value of a secret for non-proxy contexts.
+
+    Use resolve_secret() for any context that is NOT an LLM API call
+    (git, HTTP APIs, direct tool use). Do not fetch from OpenBao directly.
+
+    Resolution order (AC-01 through AC-05):
+      1. OpenBao via get_openbao_manager().get_secret(key, project_slug)
+         - project_slug set => PSK project-first / global-fallback (AC-02)
+         - sentinel 'proxy-a0' treated as absent (AC-05)
+      2. os.environ fallback (.env backend) if OpenBao unavailable (AC-03)
+         - sentinel 'proxy-a0' treated as absent (AC-05)
+      3. None if key absent from all backends (AC-04)
+
+    Args:
+        key: Secret key name, e.g. 'GH_TOKEN'.
+        project_slug: Optional project slug for PSK two-tier resolution (AC-02).
+
+    Returns:
+        Real secret value or None.  Never returns 'proxy-a0' (AC-05).
+
+    Satisfies: resolve_secret AC-01 through AC-05
+    """
+    # AC-01: OpenBao primary resolution path
+    try:
+        manager = get_openbao_manager()
+        if manager is not None:
+            value = manager.get_secret(key, project_slug=project_slug)  # AC-02
+            if value is not None and value != "proxy-a0":               # AC-05
+                return value
+    except Exception as exc:
+        logger.debug("resolve_secret OpenBao lookup failed for %r: %s", key, exc)
+
+    # AC-03: os.environ fallback (.env backend)
+    env_value = os.environ.get(key)
+    if env_value is not None and env_value != "proxy-a0":              # AC-05
+        return env_value
+
+    # AC-04: key absent from all backends
+    return None

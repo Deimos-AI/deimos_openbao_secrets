@@ -158,3 +158,65 @@ def test_degraded_logging_on_warning(caplog):
         "unexpected-resolver-err" in msg or "OpenBaoSecretsResolver" in msg
         for msg in caplog.messages
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests for resolve_secret() -- non-proxy secret resolution
+# ---------------------------------------------------------------------------
+
+
+class TestResolveSecret:
+    """Unit tests for factory_common.resolve_secret().
+
+    Uses monkeypatch.setattr to patch get_openbao_manager() directly on the
+    factory_common module -- avoids singleton state interference.
+
+    AC-01: OpenBao available => returns real value
+    AC-03: OpenBao unavailable / returns None => os.environ fallback
+    AC-04: Key absent from both backends => None
+    AC-05: sentinel 'proxy-a0' never returned from any code path
+    """
+
+    def test_resolve_secret_openbao_available_returns_real_value(self, monkeypatch):
+        """AC-01/AC-05: OpenBao returns real value; sentinel never leaked."""
+        import helpers.factory_common as fc
+        from unittest.mock import MagicMock
+
+        mock_mgr = MagicMock()
+        mock_mgr.get_secret.return_value = "gho_realtoken123abc"
+        monkeypatch.setattr(fc, "get_openbao_manager", lambda: mock_mgr)
+
+        result = fc.resolve_secret("GH_TOKEN")
+
+        assert result == "gho_realtoken123abc"  # AC-01: real value returned
+        assert result != "proxy-a0"             # AC-05: sentinel never returned
+        mock_mgr.get_secret.assert_called_once_with("GH_TOKEN", project_slug=None)
+
+    def test_resolve_secret_openbao_unavailable_falls_back_to_env(self, monkeypatch):
+        """AC-03: OpenBao returns None => os.environ fallback; sentinel never leaked."""
+        import helpers.factory_common as fc
+        from unittest.mock import MagicMock
+
+        mock_mgr = MagicMock()
+        mock_mgr.get_secret.return_value = None  # vault has no value for this key
+        monkeypatch.setattr(fc, "get_openbao_manager", lambda: mock_mgr)
+        monkeypatch.setenv("GH_TOKEN", "env_fallback_token_xyz")
+
+        result = fc.resolve_secret("GH_TOKEN")
+
+        assert result == "env_fallback_token_xyz"  # AC-03: env fallback used
+        assert result != "proxy-a0"                # AC-05: sentinel never returned
+
+    def test_resolve_secret_key_absent_returns_none(self, monkeypatch):
+        """AC-04: Key absent from both OpenBao and os.environ => None."""
+        import helpers.factory_common as fc
+        from unittest.mock import MagicMock
+
+        mock_mgr = MagicMock()
+        mock_mgr.get_secret.return_value = None
+        monkeypatch.setattr(fc, "get_openbao_manager", lambda: mock_mgr)
+        monkeypatch.delenv("_RESOLVE_ABSENT_KEY_XYZ", raising=False)
+
+        result = fc.resolve_secret("_RESOLVE_ABSENT_KEY_XYZ")
+
+        assert result is None  # AC-04: None when absent from all backends
