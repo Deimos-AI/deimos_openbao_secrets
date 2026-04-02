@@ -61,6 +61,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from fnmatch import fnmatch
+from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -307,18 +308,57 @@ async def get_plugin_config(
     agent_profile: str,
     **kwargs: Any,
 ) -> None:
-    """ADR-01: always return placeholders — never auto-resolve on read.
+    """Resolve plugin config secrets with project-first, global-fallback PSK lookup.
 
-    This hook is intentionally a **NO-OP**.  Returning ``None`` instructs the
-    framework to use the stored config value unchanged, preserving
-    ``⟦bao:v1:…⟧`` placeholder strings in the returned dict.
+    PSK-004: When a project is active, resolves placeholder values using
+    manager.get_secret(key, project_slug=project_slug) — project vault path
+    first, global fallback on miss.
 
-    Live value resolution must be requested explicitly by service consumers
-    via :func:`resolve_plugin_config` when actual credential values are
-    required (e.g. before constructing an HTTP client or auth header).
+    Backward compat (ADR-01): When no project active, returns None so framework
+    uses stored config unchanged (placeholders preserved).
     """
-    return None  # framework uses stored config as-is (placeholders preserved)
+    # PSK-004: derive project slug from active project context
+    project = project_name or ''
+    if project:
+        project_slug = Path(project).name  # AC-02: derivation
+    else:
+        project_slug = None  # AC-04: no project active — backward compat
 
+    if not project_slug:
+        return None  # ADR-01: no project active — no-op, framework uses stored config
+
+    # Project active — resolve placeholders with PSK-aware manager
+    manager = _get_manager()
+    if manager is None:
+        return None
+
+    settings = kwargs.get('settings')
+    if not settings or not isinstance(settings, dict):
+        return None
+
+    resolved = {}
+    has_resolution = False
+    for key, value in settings.items():
+        if (
+            isinstance(value, str)
+            and value.startswith(_PLACEHOLDER_PREFIX)
+            and value.endswith(_PLACEHOLDER_SUFFIX)
+        ):
+            # PSK-004 AC-03: project-first resolution via manager
+            live = manager.get_secret(key, project_slug=project_slug)
+            if live is not None:
+                resolved[key] = live
+                has_resolution = True
+                logger.debug(
+                    "PSK-004: resolved key=%r via project_slug=%r",
+                    key, project_slug,
+                )
+            else:
+                resolved[key] = value  # leave placeholder intact
+        else:
+            resolved[key] = value
+
+    return resolved if has_resolution else None
 
 # ---------------------------------------------------------------------------
 # Helper: resolve_plugin_config
