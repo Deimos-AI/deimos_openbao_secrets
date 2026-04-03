@@ -87,12 +87,6 @@ PROVIDER_REGISTRY: Dict[str, Dict[str, str]] = {
         "format": "Bearer {key}",
         "secret_key": "OPENROUTER_API_KEY",
     },
-    "github": {
-        "upstream": "https://api.github.com",
-        "auth_header": "Authorization",
-        "format": "Bearer {key}",
-        "secret_key": "GH_TOKEN",
-    },
 }
 
 

@@ -72,7 +72,6 @@ def _inject_proxy_env(port: int) -> None:
         ANTHROPIC_BASE_URL      -> http://127.0.0.1:{port}/proxy/anthropic
         OPENROUTER_API_KEY      -> "proxy-a0"  (dummy sentinel)
         OPENROUTER_BASE_URL     -> http://127.0.0.1:{port}/proxy/openrouter
-        GH_TOKEN                -> "proxy-a0"  (dummy sentinel)
     """
     proxy_base = f"http://127.0.0.1:{port}"
     os.environ["OPENAI_API_KEY"] = "proxy-a0"
@@ -81,7 +80,6 @@ def _inject_proxy_env(port: int) -> None:
     os.environ["ANTHROPIC_BASE_URL"] = f"{proxy_base}/proxy/anthropic"
     os.environ["OPENROUTER_API_KEY"] = "proxy-a0"
     os.environ["OPENROUTER_BASE_URL"] = f"{proxy_base}/proxy/openrouter"
-    os.environ["GH_TOKEN"] = "proxy-a0"
     logger.info(
         "Proxy env injected: port=%d  "
         "(real keys remain in OpenBao vault, not in os.environ)",

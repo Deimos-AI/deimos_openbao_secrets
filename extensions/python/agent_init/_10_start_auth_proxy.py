@@ -138,7 +138,6 @@ def _inject_proxy_env_fallback(port: int) -> None:
     os.environ["ANTHROPIC_BASE_URL"] = f"{proxy_base}/proxy/anthropic"
     os.environ["OPENROUTER_API_KEY"] = "proxy-a0"
     os.environ["OPENROUTER_BASE_URL"] = f"{proxy_base}/proxy/openrouter"
-    os.environ["GH_TOKEN"] = "proxy-a0"
     logger.info(
         "Proxy env injected (fallback path): port=%d", port
     )
