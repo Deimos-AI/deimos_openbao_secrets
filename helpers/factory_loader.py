@@ -21,7 +21,6 @@ the plugin directory at runtime regardless of import environment.
 import importlib.util
 import os
 import sys
-from helpers.plugins import find_plugin_dir
 
 _FC_MODULE_NAME = "openbao_secrets_factory_common"
 
@@ -41,6 +40,11 @@ def _get_openbao_manager():
     # Use cached module if already loaded — prevents re-exec and singleton reset
     if _FC_MODULE_NAME in sys.modules:
         return sys.modules[_FC_MODULE_NAME].get_openbao_manager()
+
+    # Deferred import: find_plugin_dir lives in A0's helpers.plugins, which is
+    # only resolvable inside the A0 runtime. Importing lazily here avoids an
+    # ImportError when factory_loader is imported in test or standalone contexts.
+    from helpers.plugins import find_plugin_dir  # noqa: PLC0415
 
     plugin_dir = find_plugin_dir("deimos_openbao_secrets")
     if not plugin_dir:

@@ -125,7 +125,7 @@ def test_returns_none_when_factory_raises(factory_mock):
 def test_returns_none_when_get_secrets_manager_raises_internally():
     """get_secrets_manager() returns None and never re-raises when _get_openbao_manager itself raises."""
     with patch.object(
-        _resolver_mod, "_get_openbao_manager", side_effect=Exception("internal boom")
+        _resolver_mod, "_get_available_openbao_manager", side_effect=Exception("internal boom")
     ):
         result = get_secrets_manager()
     assert result is None
@@ -149,7 +149,7 @@ def test_context_kwarg_accepted(factory_mock):
 def test_degraded_logging_on_warning(caplog):
     """A logger.warning is emitted when an unexpected exception propagates inside get_secrets_manager."""
     with patch.object(
-        _resolver_mod, "_get_openbao_manager", side_effect=Exception("unexpected-resolver-err")
+        _resolver_mod, "_get_available_openbao_manager", side_effect=Exception("unexpected-resolver-err")
     ):
         with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
             result = get_secrets_manager()

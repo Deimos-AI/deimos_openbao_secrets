@@ -36,7 +36,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def _get_openbao_manager():
+def _get_available_openbao_manager():
     """Return OpenBaoSecretsManager singleton if available, else None."""
     try:
         factory_mod = sys.modules.get("openbao_secrets_factory_common")
@@ -84,7 +84,7 @@ def get_secrets_manager(context=None, **kwargs):
     .env-backed SecretsManager (graceful fallback \u2014 ADR-02).
     """
     try:
-        manager = _get_openbao_manager()
+        manager = _get_available_openbao_manager()
         if manager is None:
             # OpenBao not available \u2014 let framework use default .env manager
             return None
