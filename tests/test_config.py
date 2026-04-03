@@ -51,7 +51,7 @@ class TestDefaults:
         config = OpenBaoConfig()
         assert config.enabled is False
         assert config.url == "http://127.0.0.1:8200"
-        assert config.auth_method == "approle"
+        assert config.auth_method == "token"  # REM-007: default aligned to token
         assert config.role_id == ""
         assert config.secret_id == ""
         assert config.token == ""

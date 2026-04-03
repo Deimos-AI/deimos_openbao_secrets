@@ -88,7 +88,7 @@ class OpenBaoConfig:
 
     enabled: bool = False
     url: str = "http://127.0.0.1:8200"
-    auth_method: Literal["approle", "token"] = "approle"
+    auth_method: Literal["approle", "token"] = "token"  # REM-007: aligned with default_config.yaml
     role_id: str = ""
     secret_id: str = ""
     token: str = ""
