@@ -24,11 +24,65 @@ Only the in-memory MCPConfig instance receives live credential values.
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import logging
+import os
+import sys
 
 from helpers.api import ApiHandler, Request, Response
-from helpers.vault_io import _get_manager, _get_hvac, _vault_read  # REM-002: bare import safe in api/
+# ---------------------------------------------------------------------------
+# Plugin helper bootstrap — load helpers/vault_io.py via importlib.util.
+# A0's importmodule() loads api/ files without plugin root on sys.path.
+# `from helpers.vault_io import ...` resolves to A0's /a0/helpers/vault_io.py
+# which does NOT exist → ModuleNotFoundError → Flask 500 HTML response
+# → browser JSON.parse fails: "Unexpected token '<', <!doctype ..."
+# Fix: use find_plugin_dir() (A0's helpers.plugins — always safe) to resolve
+# the path at runtime and load via importlib.util with a unique module key.
+# sys.modules caching ensures exec_module is called only once per process.
+# ---------------------------------------------------------------------------
+_VAULT_IO_MODULE = "deimos_openbao_secrets_helpers_vault_io"
+
+
+def _load_vault_io():
+    """Load plugin's helpers/vault_io.py, cached in sys.modules."""
+    if _VAULT_IO_MODULE not in sys.modules:
+        from helpers.plugins import find_plugin_dir  # A0's helpers.plugins — always safe
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            return None
+        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        if not os.path.exists(path):
+            return None
+        spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_VAULT_IO_MODULE] = mod  # register BEFORE exec_module (circular import guard)
+        spec.loader.exec_module(mod)
+    return sys.modules.get(_VAULT_IO_MODULE)
+
+
+def _get_manager():
+    """Resolve OpenBaoSecretsManager via vault_io._get_manager()."""
+    mod = _load_vault_io()
+    return mod._get_manager() if mod else None
+
+
+def _get_hvac(manager):
+    """Extract (hvac_client, mount_point) via vault_io._get_hvac()."""
+    mod = _load_vault_io()
+    if not mod:
+        raise RuntimeError("vault_io not available — plugin dir not found")
+    return mod._get_hvac(manager)
+
+
+def _vault_read(manager, path: str, mount: str = None):
+    """Read KV v2 secret via vault_io._vault_read()."""
+    mod = _load_vault_io()
+    if not mod:
+        return None
+    return mod._vault_read(manager, path, mount) if mount else mod._vault_read(manager, path)
+
 
 logger = logging.getLogger(__name__)
 

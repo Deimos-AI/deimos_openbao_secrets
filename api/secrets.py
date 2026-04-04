@@ -15,7 +15,40 @@ import subprocess
 import sys
 from pathlib import Path
 from helpers.api import ApiHandler, Request, Response
-from helpers.config import load_config  # REM-003: canonical config loader (COD-03)
+# ---------------------------------------------------------------------------
+# Plugin helper bootstrap — load helpers/config.py via importlib.util.
+# A0's importmodule() loads api/ files without plugin root on sys.path.
+# `from helpers.config import load_config` resolves to A0's /a0/helpers/
+# which has no config.py → ModuleNotFoundError → Flask 500 HTML response
+# → browser JSON.parse fails: "Unexpected token '<', <!doctype ..."
+# Solution: use find_plugin_dir() (A0's own helpers.plugins — always safe)
+# to locate the file and load via importlib.util with a unique module key.
+# sys.modules caching ensures exec_module is called only once per process.
+# ---------------------------------------------------------------------------
+_PLUGIN_CFG_MODULE = "deimos_openbao_secrets_helpers_config"
+
+
+def _get_config_module():
+    """Load plugin's helpers/config.py, cached in sys.modules."""
+    if _PLUGIN_CFG_MODULE not in sys.modules:
+        from helpers.plugins import find_plugin_dir  # A0's helpers.plugins — always safe
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            raise ImportError("deimos_openbao_secrets plugin dir not found via find_plugin_dir()")
+        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        if not os.path.exists(config_path):
+            raise ImportError(f"helpers/config.py not found at: {config_path}")
+        spec = importlib.util.spec_from_file_location(_PLUGIN_CFG_MODULE, config_path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_PLUGIN_CFG_MODULE] = mod  # register before exec_module (circular import guard)
+        spec.loader.exec_module(mod)
+    return sys.modules[_PLUGIN_CFG_MODULE]
+
+
+def load_config(plugin_dir: str):
+    """Delegate to plugin's helpers/config.py::load_config()."""
+    return _get_config_module().load_config(plugin_dir)
+
 
 logger = logging.getLogger(__name__)
 
