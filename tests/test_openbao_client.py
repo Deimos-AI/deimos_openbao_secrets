@@ -137,7 +137,9 @@ class TestConnection:
         assert mock_hvac_client.token == "hvs.test-token"
 
     @patch("helpers.openbao_client.hvac.Client")
-    def test_connect_with_approle(self, mock_hvac_cls, approle_config, mock_hvac_client):
+    def test_connect_with_approle(self, mock_hvac_cls, approle_config, mock_hvac_client, monkeypatch):
+        monkeypatch.delenv("OPENBAO_ROLE_ID", raising=False)
+        monkeypatch.setenv("OPENBAO_SECRET_ID", "test-secret-id")
         mock_hvac_client.auth.approle.login.return_value = {
             "auth": {"client_token": "hvs.approle-token"}
         }

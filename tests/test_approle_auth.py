@@ -98,7 +98,7 @@ class TestResolveAppRoleCredentials:
     def _make_client_no_connect(self, config):
         """Create OpenBaoClient with connect() stubbed out."""
         with patch("helpers.openbao_client.hvac.Client"):
-            with patch.object(OpenBaoClient, "connect"):
+            with patch.object(OpenBaoClient, "_connect"):
                 client = OpenBaoClient(config)
         return client
 
