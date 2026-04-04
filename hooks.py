@@ -4,8 +4,10 @@ Called by the Agent Zero framework via helpers.plugins.call_plugin_hook().
 See plugins/README.md for the hooks.py contract.
 
 Available hooks:
-    install()   — called after plugin install/update (via plugin installer)
-    uninstall() — called before plugin deletion
+    install()            -- called after plugin install/update (via plugin installer)
+    uninstall()          -- called before plugin deletion
+    save_plugin_config() -- called when plugin config is saved from the UI
+    get_plugin_config()  -- called when plugin config is read for the UI
 """
 
 import logging
@@ -24,7 +26,112 @@ _REQUIREMENTS = _PLUGIN_DIR / "requirements.txt"
 # ---------------------------------------------------------------------------
 # POST /api/plugins/deimos_openbao_secrets/health       -> api/health.py
 # POST /api/plugins/deimos_openbao_secrets/secrets      -> api/secrets.py
-# POST /api/plugins/deimos_openbao_secrets/rotate_mcp   -> api/rotate_mcp.py (G-05)
+# POST /api/plugins/deimos_openbao_secrets/rotate_mcp   -> api/rotate_mcp.py
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# REM-033 AC-01/AC-02: Dependency auto-install at plugin load time.
+#
+# Called at module level so it fires on every hooks.py import (plugin activation
+# or any code that imports hooks).  Delegates to helpers/deps.py which has a
+# module-level `_installed` boolean guard -- subsequent calls are free no-ops.
+# Errors are caught and logged as warnings so a transient pip failure never
+# prevents the plugin from loading.
+# ---------------------------------------------------------------------------
+
+def _ensure_deps_at_load() -> None:
+    """Install missing plugin dependencies when hooks.py is first imported.
+
+    Satisfies: AC-01, AC-02 (REM-033)
+    """
+    try:
+        plugin_root = str(_PLUGIN_DIR)
+        if plugin_root not in sys.path:
+            sys.path.insert(0, plugin_root)
+        from helpers.deps import ensure_dependencies  # noqa: PLC0415
+        ensure_dependencies()
+    except Exception as exc:  # pragma: no cover
+        logger.warning("REM-033: dependency pre-install warning: %s", exc)
+
+
+_ensure_deps_at_load()
+
+
+# ---------------------------------------------------------------------------
+# REM-033 AC-03/AC-04: Key normalisation -- Alpine.js compound <-> snake_case
+#
+# Problem: Alpine.js x-model binds to compound-lowercase keys (authmethod,
+# mountpoint, etc.).  When the user clicks Save the framework serialises the
+# Alpine config object directly to config.json using those same keys.
+# helpers/config.py::load_config() expects snake_case OpenBaoConfig field
+# names (auth_method, mount_point, etc.) -- mismatched keys are silently
+# dropped and the dataclass resolves to wrong defaults (e.g. auth_method
+# defaults to 'token' even when the UI shows 'approle').
+#
+# Fix: intercept in save_plugin_config() and normalise compound -> snake_case
+# before the framework writes config.json.  Reverse in get_plugin_config() so
+# the UI re-reads values correctly from the now-snake_case file.
+# ---------------------------------------------------------------------------
+
+_KEY_REMAP: "dict[str, str]" = {
+    # Alpine.js compound key         ->  OpenBaoConfig snake_case field name
+    "authmethod":               "auth_method",
+    "mountpoint":               "mount_point",
+    "secretspath":              "secrets_path",
+    "tlsverify":                "tls_verify",
+    "tlscacert":                "tls_ca_cert",
+    "cachettl":                 "cache_ttl",
+    "retryattempts":            "retry_attempts",
+    "circuitbreakerthreshold":  "circuit_breaker_threshold",
+    "circuitbreakerrecovery":   "circuit_breaker_recovery",
+    "fallbacktoenv":            "fallback_to_env",
+    "fallbacktoenvonerror":     "fallback_to_env_on_error",
+    "terminalsecrets":          "terminal_secrets",
+    "roleid":                   "role_id",
+    "secretidenv":              "secret_id_env",
+    "secretidfile":             "secret_id_file",
+    "vaultprojecttemplate":     "vault_project_template",
+    "vaultnamespace":           "vault_namespace",
+    "vaulttokenfile":           "vault_token_file",
+}
+
+# Reverse map: snake_case -> Alpine.js compound format (used by get_plugin_config)
+_KEY_REVERSE: "dict[str, str]" = {v: k for k, v in _KEY_REMAP.items()}
+
+
+def normalize_config_keys(data: dict) -> dict:
+    """Normalise Alpine.js compound/camelCase keys to snake_case for config.json.
+
+    Idempotent: snake_case keys absent from the remap dict pass through
+    unchanged, so a dict that is already normalised is safe to call again.
+
+    Example::
+
+        normalize_config_keys({"authmethod": "approle", "mountpoint": "secret"})
+        # -> {"auth_method": "approle", "mount_point": "secret"}
+
+    Satisfies: AC-03, AC-04 (REM-033)
+    """
+    return {_KEY_REMAP.get(k, k): v for k, v in data.items()}
+
+
+def denormalize_config_keys(data: dict) -> dict:
+    """Convert snake_case config keys back to Alpine.js compound format for the UI.
+
+    Allows get_plugin_config() to return values that Alpine.js x-model bindings
+    (config.authmethod, config.mountpoint, etc.) can populate correctly after
+    config.json has been written with snake_case keys.
+
+    Keys not in the reverse map (e.g. 'enabled', 'url') pass through unchanged.
+
+    Satisfies: AC-03 (REM-033) -- round-trip fidelity for get_plugin_config.
+    """
+    return {_KEY_REVERSE.get(k, k): v for k, v in data.items()}
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle: install
 # ---------------------------------------------------------------------------
 
 def install():
@@ -39,7 +146,7 @@ def install():
     environment (the A0 framework venv, typically /opt/venv-a0).
     """
     if not _REQUIREMENTS.exists():
-        logger.warning("requirements.txt not found at %s — skipping", _REQUIREMENTS)
+        logger.warning("requirements.txt not found at %s -- skipping", _REQUIREMENTS)
         return
 
     logger.info("Installing deimos_openbao_secrets dependencies from %s", _REQUIREMENTS)
@@ -61,38 +168,69 @@ def install():
         raise
 
 
+# ---------------------------------------------------------------------------
+# Lifecycle: save_plugin_config
+# ---------------------------------------------------------------------------
+
 def save_plugin_config(result=None, settings=None, **kwargs):
     """Hook called by A0 framework during config save.
 
-    If this hook is absent, save_plugin_config() in helpers/plugins.py
-    receives None from call_plugin_hook() and SKIPS writing config.json.
-    This hook must return the settings dict to allow the write.
+    REM-033 AC-03/AC-04: Normalises Alpine.js compound/camelCase keys to
+    snake_case before the framework writes config.json.  Without this
+    normalisation the dict is persisted verbatim and load_config() silently
+    drops every compound key, resolving OpenBaoConfig to wrong defaults
+    (e.g. auth_method defaults to 'token' even when 'approle' was set in UI).
+
+    Example transformation::
+
+        {"authmethod": "approle", "mountpoint": "secret"}
+        -> {"auth_method": "approle", "mount_point": "secret"}
+
+    Idempotent: already-snake_case dicts pass through unchanged.
 
     **kwargs absorbs extra args the framework may pass (e.g. default=).
     """
-    return settings or {}
+    raw: dict = settings or {}
+    return normalize_config_keys(raw)
 
+
+# ---------------------------------------------------------------------------
+# Lifecycle: get_plugin_config
+# ---------------------------------------------------------------------------
 
 def get_plugin_config(result=None, **kwargs):
     """Hook called by A0 framework during config load.
 
-    Merges default_config.yaml underneath the saved config.json
-    to ensure all fields are always present in the settings object.
+    REM-033 AC-03/AC-04: After merging default_config.yaml under the saved
+    config.json, denormalises any snake_case keys back to Alpine.js compound
+    format so that x-model bindings (config.authmethod, config.mountpoint,
+    etc.) populate correctly in the UI.
+
+    Merge order (lower priority listed first):
+      1. default_config.yaml  -- already in Alpine.js compound format
+      2. saved config.json (result) -- now snake_case after REM-033 fix;
+         denormalised to compound before merging so UI defaults are
+         correctly overridden by the saved values.
 
     **kwargs absorbs extra args the framework passes (e.g. agent=, default=).
     """
-    import yaml
+    import yaml  # noqa: PLC0415 -- PyYAML is a framework dependency, always present
 
-    # Load defaults
-    defaults = {}
+    # Load defaults (already in Alpine.js compound format from default_config.yaml)
+    defaults: dict = {}
     default_path = _PLUGIN_DIR / "default_config.yaml"
     if default_path.exists():
-        with open(default_path) as f:
-            defaults = yaml.safe_load(f) or {}
+        with open(default_path) as fh:
+            defaults = yaml.safe_load(fh) or {}
 
-    # Merge: defaults underneath, saved config on top
+    # result from the framework may be:
+    #   - snake_case  (post-REM-033 config.json)
+    #   - compound    (legacy config.json from before REM-033)
+    # denormalize_config_keys() converts snake_case -> Alpine.js compound;
+    # already-compound keys pass through unchanged (not in _KEY_REVERSE).
     if result and isinstance(result, dict):
-        merged = {**defaults, **result}
+        denormalized = denormalize_config_keys(result)
+        merged = {**defaults, **denormalized}
     else:
         merged = defaults
 

@@ -149,7 +149,26 @@ class OpenBaoClient:
                 self._client.session.headers.update(headers)
 
             if self._config.auth_method == "approle":
-                self._auth_approle()
+                try:
+                    self._auth_approle()
+                except Exception as _approle_exc:  # REM-033 AC-05/AC-06: token fallback
+                    logger.warning(
+                        "AppRole auth failed (%s). Checking token fallback.",
+                        _approle_exc,
+                    )
+                    if self._config.token:
+                        logger.warning(
+                            "Falling back to token auth (vault_token is set). "
+                            "Set auth_method=token explicitly to suppress this warning."
+                        )
+                        self._auth_token()
+                    else:
+                        logger.error(
+                            "AppRole failed and no vault_token available. "
+                            "Plugin will operate in degraded mode."
+                        )
+                        self._client = None
+                        return
             elif self._config.auth_method == "token":
                 self._auth_token()
 
