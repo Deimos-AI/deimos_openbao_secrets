@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -108,6 +108,7 @@ class OpenBaoConfig:
     fallback_to_env_on_error: bool = False
     vault_namespace: str = ""
     vault_token_file: str = ""
+    terminal_secrets: list = field(default_factory=list)  # REM-032: names of secrets to surface in terminal output
 
 
 def _parse_value(field_name: str, raw: Any) -> Any:

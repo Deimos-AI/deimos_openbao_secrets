@@ -346,3 +346,58 @@ Coverage includes:
 No consumer action required. The masking layer is transparent and universal.
 
 > **Rule:** Use the auth proxy for LLM API keys — automatic and transparent. Use `resolve_secret()` for everything else — explicit retrieval is the contract.
+
+---
+
+## Upgrading
+
+### REM-032 — `config.json` key format change (snake_case alignment)
+
+Prior to REM-032, the settings modal wrote compound config keys in flat/camelCase format
+(e.g. `authmethod`, `mountpoint`). `load_config()` now requires snake_case keys matching
+the `OpenBaoConfig` dataclass field names exactly.
+
+**Affected keys:**
+
+| Old key (camelCase) | New key (snake_case) |
+|---|---|
+| `authmethod` | `auth_method` |
+| `mountpoint` | `mount_point` |
+| `secretspath` | `secrets_path` |
+| `tlsverify` | `tls_verify` |
+| `tlscacert` | `tls_ca_cert` |
+| `cachettl` | `cache_ttl` |
+| `retryattempts` | `retry_attempts` |
+| `circuitbreakerthreshold` | `circuit_breaker_threshold` |
+| `circuitbreakerrecovery` | `circuit_breaker_recovery` |
+| `fallbacktoenv` | `fallback_to_env` |
+| `terminalsecrets` | `terminal_secrets` |
+
+**To migrate an existing `config.json`**, run this one-time script from the plugin root:
+
+```bash
+cd /path/to/deimos_openbao_secrets
+python -c "
+import json
+with open('config.json') as f:
+    data = json.load(f)
+remap = {
+    'authmethod': 'auth_method', 'mountpoint': 'mount_point',
+    'secretspath': 'secrets_path', 'tlsverify': 'tls_verify',
+    'tlscacert': 'tls_ca_cert', 'cachettl': 'cache_ttl',
+    'retryattempts': 'retry_attempts',
+    'circuitbreakerthreshold': 'circuit_breaker_threshold',
+    'circuitbreakerrecovery': 'circuit_breaker_recovery',
+    'fallbacktoenv': 'fallback_to_env', 'terminalsecrets': 'terminal_secrets',
+    'roleid': 'role_id', 'secretidenv': 'secret_id_env',
+    'secretidfile': 'secret_id_file',
+}
+fixed = {remap.get(k, k): v for k, v in data.items()}
+with open('config.json', 'w') as f:
+    json.dump(fixed, f, indent=2)
+print('Migrated keys:', [k for k in data if k in remap])
+"
+```
+
+New installations (settings saved after REM-032) are not affected — the modal now writes
+correct snake_case keys automatically.

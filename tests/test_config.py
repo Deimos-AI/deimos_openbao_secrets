@@ -265,4 +265,125 @@ class TestAppRoleConfigFields:
         """AC-02: OPENBAO_ROLE_ID env var is mapped to config.role_id by load_config()."""
         monkeypatch.setenv("OPENBAO_ROLE_ID", "env-test-role-id")
         config = load_config(plugin_dir)
+    def test_openbao_role_id_env_sets_config_role_id(self, plugin_dir, monkeypatch):
+        """AC-02: OPENBAO_ROLE_ID env var is mapped to config.role_id by load_config()."""
+        monkeypatch.setenv("OPENBAO_ROLE_ID", "env-test-role-id")
+        config = load_config(plugin_dir)
         assert config.role_id == "env-test-role-id"
+
+
+# ── REM-032: snake_case config key alignment ──────────────────────────────────
+
+class TestREM032SnakeCaseKeys:
+    """Tests for REM-032 — x-model key alignment to snake_case OpenBaoConfig fields."""
+
+    def test_terminal_secrets_default_empty_list(self):
+        """AC-03: terminal_secrets field exists in OpenBaoConfig with default=[]."""
+        config = OpenBaoConfig()
+        assert hasattr(config, "terminal_secrets")
+        assert config.terminal_secrets == []
+        assert isinstance(config.terminal_secrets, list)
+
+    def test_terminal_secrets_instances_are_independent(self):
+        """AC-03: default_factory ensures each instance gets its own list."""
+        a = OpenBaoConfig()
+        b = OpenBaoConfig()
+        a.terminal_secrets.append("X")
+        assert b.terminal_secrets == [], "default_factory must not share list across instances"
+
+    def test_load_config_snake_case_auth_method_resolved(self, tmp_path, clean_env):
+        """AC-04: load_config() reads auth_method from snake_case config.json without Unknown key warning."""
+        import logging
+        settings = {"auth_method": "approle", "role_id": "r-123"}
+        (tmp_path / "config.json").write_text(json.dumps(settings))
+
+        warnings_seen = []
+        class Cap(logging.Handler):
+            def emit(self, rec): warnings_seen.append(self.format(rec))
+        handler = Cap()
+        log = logging.getLogger("helpers.config")
+        log.addHandler(handler)
+        old_level = log.level
+        log.setLevel(logging.WARNING)
+        try:
+            config = load_config(str(tmp_path))
+        finally:
+            log.removeHandler(handler)
+            log.setLevel(old_level)
+
+        assert config.auth_method == "approle", f"Expected approle, got {config.auth_method!r}"
+        unknown = [w for w in warnings_seen if "Unknown config key" in w]
+        assert unknown == [], f"Unexpected Unknown key warnings: {unknown}"
+
+    def test_load_config_all_snake_case_fields_resolved(self, tmp_path, clean_env):
+        """AC-05: All 11 previously-dropped compound fields now resolve without warnings."""
+        import logging
+        settings = {
+            "auth_method":              "approle",
+            "mount_point":              "mykv",
+            "secrets_path":             "myapp",
+            "tls_verify":               False,
+            "tls_ca_cert":              "",
+            "cache_ttl":                120,
+            "retry_attempts":           5,
+            "circuit_breaker_threshold": 10,
+            "circuit_breaker_recovery":  30,
+            "fallback_to_env":          False,
+            "terminal_secrets":         ["GH_TOKEN"],
+        }
+        (tmp_path / "config.json").write_text(json.dumps(settings))
+
+        warnings_seen = []
+        class Cap(logging.Handler):
+            def emit(self, rec): warnings_seen.append(self.format(rec))
+        handler = Cap()
+        log = logging.getLogger("helpers.config")
+        log.addHandler(handler)
+        old_level = log.level
+        log.setLevel(logging.WARNING)
+        try:
+            config = load_config(str(tmp_path))
+        finally:
+            log.removeHandler(handler)
+            log.setLevel(old_level)
+
+        assert config.auth_method == "approle"
+        assert config.mount_point == "mykv"
+        assert config.secrets_path == "myapp"
+        assert config.tls_verify is False
+        assert config.tls_ca_cert == ""
+        assert config.cache_ttl == 120
+        assert config.retry_attempts == 5
+        assert config.circuit_breaker_threshold == 10
+        assert config.circuit_breaker_recovery == 30
+        assert config.fallback_to_env is False
+        assert config.terminal_secrets == ["GH_TOKEN"]
+        unknown = [w for w in warnings_seen if "Unknown config key" in w]
+        assert unknown == [], f"Keys still rejected: {unknown}"
+
+    def test_camelcase_keys_still_rejected_with_warning(self, tmp_path, clean_env):
+        """Regression: camelCase keys must still be rejected (no silent acceptance)."""
+        import logging
+        settings = {"authmethod": "approle", "mountpoint": "bad"}
+        (tmp_path / "config.json").write_text(json.dumps(settings))
+
+        warnings_seen = []
+        class Cap(logging.Handler):
+            def emit(self, rec): warnings_seen.append(self.format(rec))
+        handler = Cap()
+        log = logging.getLogger("helpers.config")
+        log.addHandler(handler)
+        old_level = log.level
+        log.setLevel(logging.WARNING)
+        try:
+            config = load_config(str(tmp_path))
+        finally:
+            log.removeHandler(handler)
+            log.setLevel(old_level)
+
+        # camelCase keys must NOT be applied
+        assert config.auth_method == "token", "camelCase key must not silently set auth_method"
+        assert config.mount_point == "secret", "camelCase key must not silently set mount_point"
+        # and must generate Unknown key warnings
+        unknown = [w for w in warnings_seen if "Unknown config key" in w]
+        assert len(unknown) == 2, f"Expected 2 Unknown key warnings, got: {unknown}"
