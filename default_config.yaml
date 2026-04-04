@@ -1,6 +1,11 @@
 enabled: false
 url: "http://127.0.0.1:8200"
 auth_method: token
+# REM-031: AppRole credentials — uncomment and set to enable AppRole auth
+# auth_method: approle       # switch from token to approle for production
+# role_id: ""                # non-sensitive; or set OPENBAO_ROLE_ID env var (env takes priority)
+# secret_id_env: OPENBAO_SECRET_ID   # name of env var holding secret_id (never store value here)
+# secret_id_file: ""         # optional: path to file containing secret_id (e.g. /run/secrets/...)
 mount_point: secret
 secrets_path: agentzero
 tls_verify: true

@@ -163,20 +163,74 @@ class OpenBaoClient:
             logger.error("Failed to connect to OpenBao at %s: %s", self._config.url, exc)
             self._client = None
 
+    def _resolve_approle_credentials(self) -> tuple[str, str]:
+        """Resolve AppRole role_id and secret_id from env > config hierarchy.
+
+        Resolution order:
+            role_id:   os.environ['OPENBAO_ROLE_ID'] > config.role_id
+            secret_id: os.environ[config.secret_id_env] > file at config.secret_id_file
+
+        Returns:
+            Tuple of (role_id, secret_id) strings.
+
+        Raises:
+            RuntimeError: With clear message when role_id or secret_id cannot be resolved.
+
+        Satisfies: AC-03, AC-04, AC-05, AC-06
+        """
+        import os as _os
+
+        # AC-03: role_id: env > config
+        role_id = _os.environ.get('OPENBAO_ROLE_ID') or self._config.role_id
+        if not role_id:
+            raise RuntimeError(
+                "AppRole auth requires role_id. "
+                "Set OPENBAO_ROLE_ID env var or configure via plugin settings."
+            )
+
+        # AC-04: secret_id: named env var > file path
+        secret_id_env_name = getattr(self._config, 'secret_id_env', None) or 'OPENBAO_SECRET_ID'
+        secret_id = _os.environ.get(secret_id_env_name)
+
+        if not secret_id:
+            secret_id_file = getattr(self._config, 'secret_id_file', '') or ''
+            if secret_id_file:
+                from pathlib import Path as _Path
+                try:
+                    secret_id = _Path(secret_id_file).read_text().strip()
+                except (OSError, IOError) as exc:
+                    raise RuntimeError(f"Cannot read secret_id_file: {exc}") from exc
+
+        if not secret_id:
+            raise RuntimeError(
+                f"AppRole auth requires secret_id. "
+                f"Set {secret_id_env_name} env var or configure secret_id_file."
+            )
+
+        return role_id, secret_id
+
     def _auth_approle(self) -> None:
-        """Authenticate with AppRole method."""
+        """Authenticate with AppRole using env>config credential resolution.
+
+        Satisfies: AC-03, AC-04, AC-07, AC-08 (token held in memory only)
+        """
         if not self._client:
             return
         try:
+            role_id, secret_id = self._resolve_approle_credentials()
+            # AC-04: log role_id prefix only — secret_id value NEVER logged
+            safe_prefix = role_id[:8] if len(role_id) >= 8 else role_id
+            logger.info("AppRole login for role_id=%s...", safe_prefix)
             result = self._client.auth.approle.login(
-                role_id=self._config.role_id,
-                secret_id=self._config.secret_id,
+                role_id=role_id,
+                secret_id=secret_id,
             )
-            self._client.token = result["auth"]["client_token"]
+            self._client.token = result["auth"]["client_token"]  # AC-08: memory only
             logger.info("AppRole authentication successful")
         except Exception as exc:
             logger.error("AppRole authentication failed: %s", exc)
             raise
+
 
     def _auth_token(self) -> None:
         """Authenticate with direct token."""

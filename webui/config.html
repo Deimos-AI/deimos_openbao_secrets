@@ -65,6 +65,49 @@
                     </div>
                 </div>
 
+                <!-- AppRole Credentials (shown when auth_method=approle) -->
+                <div x-show="config.auth_method === 'approle'" x-transition>
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Role ID</div>
+                            <div class="field-description">
+                                Non-sensitive AppRole role identifier. Env var <code>OPENBAO_ROLE_ID</code> takes priority if set.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" x-model="config.role_id"
+                                   placeholder="or set OPENBAO_ROLE_ID env var" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Secret ID Env Var Name</div>
+                            <div class="field-description">
+                                Name of the environment variable holding the <code>secret_id</code>.
+                                <strong>Never enter the secret_id value here</strong> — use an env var.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" x-model="config.secret_id_env"
+                                   placeholder="OPENBAO_SECRET_ID" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Secret ID File Path</div>
+                            <div class="field-description">
+                                Optional: path to a file containing the <code>secret_id</code>.
+                                Used when env var is absent. Recommended: <code>chmod 600</code>.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" x-model="config.secret_id_file"
+                                   placeholder="/run/secrets/openbao_secret_id" />
+                        </div>
+                    </div>
+                </div>
+
+
                 <!-- Mount Point -->
                 <div class="field">
                     <div class="field-label">

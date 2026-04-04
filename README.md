@@ -76,6 +76,55 @@ All fields are defined in `default_config.yaml` and may be overridden in the per
 | `mcp_header_scan_patterns` | `["Authorization", "X-API-Key", "X-Auth-Token"]` | **Surface B** — Header keys in `mcpServers[*].headers` matching these names are extracted to OpenBao |
 | `mcp_scan_paths` | `["**/mcp_servers.json", "**/.a0proj/mcp_servers.json"]` | **Surface B** — Explicit MCP file scan targets (never wildcards — must be explicit paths) |
 
+
+## AppRole Authentication (Recommended)
+
+AppRole is the recommended auth method for production. The session token is held in memory only
+and renewed automatically. No static token is stored on disk.
+
+### Vault-Side Setup (one-time)
+
+```bash
+# Enable AppRole
+vault auth enable approle
+
+# Create policy
+vault policy write agentzero-policy - <<EOF
+path "secret/data/agentzero" { capabilities = ["read"] }
+path "secret/data/agentzero-*" { capabilities = ["read"] }
+EOF
+
+# Create role
+vault write auth/approle/role/agentzero \
+    token_policies="agentzero-policy" \
+    token_ttl=1h \
+    token_max_ttl=4h
+
+# Get role_id (non-sensitive — safe in config or env)
+vault read auth/approle/role/agentzero/role-id
+
+# Get secret_id (sensitive — put in env var, never in repo)
+vault write -f auth/approle/role/agentzero/secret-id
+```
+
+### Plugin Configuration
+
+```json
+{ "auth_method": "approle" }
+```
+
+Set credentials via environment (recommended) or plugin settings UI:
+
+| Credential | Env Var | config.json key | Sensitive? |
+|-----------|---------|-----------------|------------|
+| role_id | `OPENBAO_ROLE_ID` (overrides) | `role_id` (written by UI) | No |
+| secret_id | `OPENBAO_SECRET_ID` | never stored as value | Yes |
+
+Env vars take priority over config.json values.
+Token is held in memory only and renewed automatically via the existing renewal loop.
+
+---
+
 ---
 
 ## Failure Modes

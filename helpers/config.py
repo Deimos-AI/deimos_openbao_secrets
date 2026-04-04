@@ -91,6 +91,8 @@ class OpenBaoConfig:
     auth_method: Literal["approle", "token"] = "token"  # REM-007: aligned with default_config.yaml
     role_id: str = ""
     secret_id: str = ""
+    secret_id_env: str = "OPENBAO_SECRET_ID"  # REM-031: name of env var holding secret_id (not the value itself)
+    secret_id_file: str = ""  # REM-031: optional path to file containing secret_id
     token: str = ""
     mount_point: str = "secret"
     secrets_path: str = "agentzero"

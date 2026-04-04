@@ -244,3 +244,25 @@ class TestValidation:
         )
         errors = validate_config(config)
         assert len(errors) >= 3  # url + role_id + timeout + threshold
+
+
+# ── REM-031: AppRole config fields ───────────────────────────────────────────
+
+class TestAppRoleConfigFields:
+    """Tests for REM-031 AppRole config fields and env-var resolution."""
+
+    def test_secret_id_env_default(self):
+        """AC-01: secret_id_env default is 'OPENBAO_SECRET_ID'."""
+        config = OpenBaoConfig()
+        assert config.secret_id_env == "OPENBAO_SECRET_ID"
+
+    def test_secret_id_file_default(self):
+        """AC-01: secret_id_file default is empty string."""
+        config = OpenBaoConfig()
+        assert config.secret_id_file == ""
+
+    def test_openbao_role_id_env_sets_config_role_id(self, plugin_dir, monkeypatch):
+        """AC-02: OPENBAO_ROLE_ID env var is mapped to config.role_id by load_config()."""
+        monkeypatch.setenv("OPENBAO_ROLE_ID", "env-test-role-id")
+        config = load_config(plugin_dir)
+        assert config.role_id == "env-test-role-id"
