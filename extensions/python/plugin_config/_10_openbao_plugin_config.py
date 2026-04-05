@@ -78,6 +78,35 @@ _IDEMPOTENCY_PREFIX: str = "⟦bao:"
 
 
 # ---------------------------------------------------------------------------
+# Settings reference detection — Surface A read hook (AC-04, AC-05)
+# ---------------------------------------------------------------------------
+_BAO_REF_BARE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")  # bare ALL_CAPS identifier
+_BAO_REF_PREFIX = "$bao:"                                  # explicit prefix form
+_BAO_DISPLAY_MASK = "[bao-ref: {key}]"                     # webui display mask (AC-10)
+
+
+def _is_bao_ref(value: object) -> bool:
+    """Return True if value looks like a vault reference (bare ALL_CAPS or $bao: prefix)."""
+    if not isinstance(value, str):
+        return False
+    if value.startswith(_BAO_REF_PREFIX):
+        return True
+    return bool(_BAO_REF_BARE_RE.match(value))
+
+
+def _extract_ref_key(value: str) -> str:
+    """Extract vault key from a bao reference value."""
+    if value.startswith(_BAO_REF_PREFIX):
+        return value[len(_BAO_REF_PREFIX):]
+    return value  # bare ALL_CAPS — the value IS the key
+
+
+def _mask_for_display(key: str) -> str:
+    """Return webui display mask string for a resolved bao reference. AC-10."""
+    return _BAO_DISPLAY_MASK.format(key=key)
+
+
+# ---------------------------------------------------------------------------
 # vault_io dynamic loader — bypasses A0 helpers/ namespace collision
 # See: helpers/vault_io.py (REM-002)
 # ---------------------------------------------------------------------------
@@ -127,6 +156,15 @@ def _vio_vault_write(manager, path: str, data: dict, custom_metadata=None):
         raise RuntimeError("vault_io not available — cannot write to vault")
     return vio._vault_write(manager, path, data, custom_metadata)
 
+def _vio_write_if_absent(
+    manager, path: str, key: str, value: str, custom_metadata=None
+) -> bool:
+    vio = _load_vault_io()
+    if vio is None:
+        raise RuntimeError("vault_io not available — cannot check/write to vault")
+    return vio.write_if_absent(manager, path, key, value, custom_metadata)
+
+
 
 def _vio_sanitize_component(value: str) -> str:
     vio = _load_vault_io()
@@ -139,6 +177,7 @@ _get_hvac = _vio_get_hvac
 _vault_read = _vio_vault_read
 _vault_write = _vio_vault_write
 _sanitize_component = _vio_sanitize_component
+_write_if_absent = _vio_write_if_absent
 
 # ---------------------------------------------------------------------------
 # Pattern loader — reads secret_field_patterns from plugin config
@@ -156,6 +195,65 @@ def _get_patterns() -> list:
         return vio._get_patterns()
     # Hardcoded defaults matching default_config.yaml secret_field_patterns
     return ["*key*", "*token*", "*secret*", "*password*", "*auth*"]
+
+
+# ---------------------------------------------------------------------------
+# Reference resolution helpers (AC-04–AC-09)
+# ---------------------------------------------------------------------------
+
+def _load_config_if_available():
+    """Load plugin config safely to read hard_fail_on_unavailable. Returns None on failure."""
+    try:
+        from helpers.plugins import find_plugin_dir
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            return None
+        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        if not os.path.exists(config_path):
+            return None
+        _CFG_MODULE = "deimos_openbao_secrets_helpers_config"
+        if _CFG_MODULE not in sys.modules:
+            spec = importlib.util.spec_from_file_location(_CFG_MODULE, config_path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[_CFG_MODULE] = mod
+            spec.loader.exec_module(mod)
+        cfg_mod = sys.modules[_CFG_MODULE]
+        return cfg_mod.load_config(plugin_dir)
+    except Exception as exc:
+        logger.debug("_load_config_if_available failed: %s", exc)
+        return None
+
+
+def _resolve_ref(manager: Any, key: str, hard_fail: bool) -> Optional[str]:
+    """Resolve vault reference key to live value.
+
+    Resolution chain (AC-06 through AC-09):
+    1. OpenBao available + hit  → return resolved value                    (AC-06)
+    2. OpenBao available + miss → return None + log WARNING                (AC-07)
+    3. OpenBao unavailable + hard_fail=False → fallback to os.getenv(key) (AC-08)
+    4. OpenBao unavailable + hard_fail=True  → raise RuntimeError          (AC-09)
+    """
+    unavailable = manager is None or not getattr(manager, "is_available", lambda: False)()
+    if unavailable:
+        if hard_fail:
+            raise RuntimeError(
+                f"OpenBao unavailable and hard_fail_on_unavailable=True — "
+                f"cannot resolve ref {key!r}"
+            )
+        env_val = os.environ.get(key)
+        if env_val:
+            logger.debug("_resolve_ref: vault unavailable — falling back to os.getenv(%r)", key)
+            return env_val
+        return None  # AC-08: env also absent — caller returns original value
+
+    data = _vault_read(manager, key) or {}
+    resolved = data.get("value") or data.get(key)
+    if resolved is None:
+        logger.warning(
+            "_resolve_ref: key %r not found in OpenBao — returning original value as-is", key
+        )
+        return None  # AC-07: vault miss
+    return resolved  # AC-06: vault hit
 
 
 # ---------------------------------------------------------------------------
@@ -315,67 +413,52 @@ async def save_plugin_config(
 
 
 # ---------------------------------------------------------------------------
-# Hook 2: get_plugin_config  (ADR-01 — NO-OP)
+# Hook 2: get_plugin_config  (ADR-01 REVISED — bao-ref resolution)
 # ---------------------------------------------------------------------------
 
 async def get_plugin_config(
     plugin_name: str,
     project_name: str,
     agent_profile: str,
+    settings: dict,
+    for_display: bool = False,
     **kwargs: Any,
-) -> None:
-    """Resolve plugin config secrets with project-first, global-fallback PSK lookup.
+) -> Optional[dict]:
+    """Surface A read hook — resolves vault references in plugin settings on read.
 
-    PSK-004: When a project is active, resolves placeholder values using
-    manager.get_secret(key, project_slug=project_slug) — project vault path
-    first, global fallback on miss.
+    ADR-01 REVISED: Previously always returned None (NO-OP). Now scans settings values
+    for vault references (bare ALL_CAPS or $bao: prefix) and resolves them from OpenBao.
 
-    Backward compat (ADR-01): When no project active, returns None so framework
-    uses stored config unchanged (placeholders preserved).
+    for_display=True  → resolved values masked as [bao-ref: KEY_NAME] (AC-10, webui safe)
+    for_display=False → resolved values are live plaintext secrets (programmatic use)
+
+    Returns None if no references found (pass-through — avoids unnecessary dict copy).
+    Returns modified settings dict if any references were resolved or masked.
     """
-    # PSK-004: derive project slug from active project context
-    project = project_name or ''
-    if project:
-        project_slug = Path(project).name  # AC-02: derivation
-    else:
-        project_slug = None  # AC-04: no project active — backward compat
+    if plugin_name == "deimos_openbao_secrets":
+        return None  # ADR-02: bootstrapping guard preserved
 
-    if not project_slug:
-        return None  # ADR-01: no project active — no-op, framework uses stored config
-
-    # Project active — resolve placeholders with PSK-aware manager
     manager = _get_manager()
-    if manager is None:
-        return None
+    cfg = _load_config_if_available()
+    hard_fail = getattr(cfg, "hard_fail_on_unavailable", False)
 
-    settings = kwargs.get('settings')
-    if not settings or not isinstance(settings, dict):
-        return None
+    resolved_any = False
+    result = dict(settings)
 
-    resolved = {}
-    has_resolution = False
-    for key, value in settings.items():
-        if (
-            isinstance(value, str)
-            and value.startswith(_PLACEHOLDER_PREFIX)
-            and value.endswith(_PLACEHOLDER_SUFFIX)
-        ):
-            # PSK-004 AC-03: project-first resolution via manager
-            live = manager.get_secret(key, project_slug=project_slug)
-            if live is not None:
-                resolved[key] = live
-                has_resolution = True
-                logger.debug(
-                    "PSK-004: resolved key=%r via project_slug=%r",
-                    key, project_slug,
-                )
-            else:
-                resolved[key] = value  # leave placeholder intact
+    for field, value in settings.items():
+        if not _is_bao_ref(value):
+            continue
+        ref_key = _extract_ref_key(value)  # AC-04, AC-05
+        live = _resolve_ref(manager, ref_key, hard_fail)
+        if live is None:
+            continue  # AC-07: miss or unavailable — keep original value
+        if for_display:
+            result[field] = _mask_for_display(ref_key)  # AC-10: mask in webui
         else:
-            resolved[key] = value
+            result[field] = live  # AC-06: live value for programmatic use
+        resolved_any = True
 
-    return resolved if has_resolution else None
-
+    return result if resolved_any else None
 # ---------------------------------------------------------------------------
 # Helper: resolve_plugin_config
 # ---------------------------------------------------------------------------

@@ -113,6 +113,31 @@ def _vault_read(manager: Any, path: str) -> Optional[dict]:
         return None
 
 
+def write_if_absent(
+    manager: Any,
+    path: str,
+    key: str,
+    value: str,
+    custom_metadata: Optional[dict] = None,
+) -> bool:
+    """Write key=value to KV v2 path only if key is absent. Returns True if written, False if exists.
+
+    Idempotent: reads current data at path first; if key already present skips write and returns
+    False. Merges new key into existing data dict (read-modify-write) so other keys at path are
+    preserved. Raises RuntimeError if hvac client unavailable. Re-raises vault write exceptions.
+    """
+    existing = _vault_read(manager, path) or {}
+    if key in existing:
+        _logger.debug(
+            "vault_io.write_if_absent: key %r already present at %r \u2014 skipping", key, path
+        )
+        return False
+    merged = {**existing, key: value}
+    _vault_write(manager, path, merged, custom_metadata=custom_metadata)
+    _logger.debug("vault_io.write_if_absent: wrote key %r to %r", key, path)
+    return True
+
+
 def _vault_write(
     manager: Any,
     path: str,

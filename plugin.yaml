@@ -5,3 +5,8 @@ version: 0.1.0
 settings_sections: []
 per_project_config: true
 per_agent_config: false
+# Optional: declare secrets this plugin requires (for cross-plugin sync discovery).
+# Other plugins add entries here; deimos_openbao_secrets does not (it is the consumer).
+# secrets:
+#   - key: API_KEY_EXAMPLE
+#     description: Example API key for the service

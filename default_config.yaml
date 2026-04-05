@@ -48,3 +48,7 @@ mcp_header_scan_patterns:
 mcp_scan_paths:
   - "**/mcp_servers.json"
   - "**/.a0proj/mcp_servers.json"
+
+# Cross-plugin secret discovery — POST /api/openbao/sync-plugins
+# Set false to disable the sync endpoint entirely (useful in hardened prod environments)
+plugin_sync_enabled: true  # AC-02: plugin_sync_enabled flag

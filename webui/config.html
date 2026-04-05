@@ -292,6 +292,13 @@
                         <button class="btn btn-field" @click="toggleBulk()">Bulk Import</button>
                     </div>
 
+                    <button id="btn-sync-plugins" class="btn btn-secondary mt-2"
+                            onclick="syncPlugins()">
+                        🔍 Discover &amp; Sync Plugin Secrets
+                    </button>
+                    <div id="sync-plugins-result" class="mt-3" style="display:none;"></div>
+
+
                     <div x-show="error" style="color:#ff6b6b; margin:8px 0; font-weight:bold;" x-text="error"></div>
                     <div x-show="loading" style="color:#888; margin:8px 0;">Loading secrets...</div>
 
@@ -573,6 +580,84 @@ DB_PASSWORD=hunter2
             }
         };
     };
+
+        async function syncPlugins() {
+            const btn = document.getElementById('btn-sync-plugins');
+            const resultDiv = document.getElementById('sync-plugins-result');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scanning...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/plugins/deimos_openbao_secrets/sync-plugins', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await resp.json();
+
+                if (!data.ok) {
+                    resultDiv.innerHTML =
+                        `<div class="alert alert-danger">${data.error}</div>`;
+                    resultDiv.style.display = 'block';
+                    return;
+                }
+
+                if (!data.plugins || data.plugins.length === 0) {
+                    resultDiv.innerHTML =
+                        '<div class="alert alert-info">No plugins declare secrets. ' +
+                        'Add a <code>secrets:</code> field to a plugin.yaml to use this feature.</div>';
+                    resultDiv.style.display = 'block';
+                    return;
+                }
+
+                const STATUS_ICON  = {exists: '🟢', migrated: '🟡', missing: '🔴'};
+                const STATUS_LABEL = {exists: 'exists', migrated: 'migrated', missing: 'missing'};
+
+                let html = '<div class="accordion" id="syncPluginsAccordion">';
+                data.plugins.forEach((plugin, idx) => {
+                    const collapseId = `syncPlugin${idx}`;
+                    const missingCount = plugin.secrets.filter(s => s.status === 'missing').length;
+                    const badge = missingCount > 0
+                        ? `<span class="badge bg-danger ms-2">${missingCount} missing</span>`
+                        : '<span class="badge bg-success ms-2">all synced</span>';
+                    const rows = plugin.secrets.map(s =>
+                        `<tr>
+                            <td><code>${s.key}</code></td>
+                            <td>${STATUS_ICON[s.status] || '❓'} ${STATUS_LABEL[s.status] || s.status}</td>
+                            <td>${s.description || ''}</td>
+                        </tr>`
+                    ).join('');
+                    html += `
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button ${idx > 0 ? 'collapsed' : ''}" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                                ${plugin.name} ${badge}
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse ${idx === 0 ? 'show' : ''}">
+                            <div class="accordion-body">
+                                <table class="table table-sm">
+                                    <thead><tr><th>Key</th><th>Status</th><th>Description</th></tr></thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+            } catch (err) {
+                resultDiv.innerHTML =
+                    `<div class="alert alert-danger">Request failed: ${err}</div>`;
+                resultDiv.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Discover & Sync Plugin Secrets';
+            }
+        }
     </script>
 </body>
 </html>

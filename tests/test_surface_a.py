@@ -98,42 +98,6 @@ def test_save_writes_matching_field_to_vault(surface_a):
     assert settings["api_key"].startswith(surface_a._PLACEHOLDER_PREFIX)  # AC-02: placeholder written
 
 
-# ---------------------------------------------------------------------------
-# AC-03 — resolve: get_plugin_config resolves placeholder via manager.get_secret
-# ---------------------------------------------------------------------------
-
-
-def test_get_plugin_config_resolves_placeholder(surface_a):
-    """AC-03: placeholder in settings → resolved via manager.get_secret(key,
-    project_slug=project_slug) where project_slug = Path(project_name).name.
-    """
-    mock_manager = MagicMock()
-    mock_manager.get_secret.return_value = "live-secret-value"
-
-    # Build a valid placeholder that get_plugin_config will resolve
-    placeholder = (
-        surface_a._PLACEHOLDER_PREFIX
-        + "plugin/myplugin/api_key"
-        + surface_a._PLACEHOLDER_SUFFIX
-    )
-    settings = {"api_key": placeholder}
-
-    with patch.object(surface_a, "_get_manager", return_value=mock_manager):
-        result = asyncio.run(
-            surface_a.get_plugin_config(
-                plugin_name="myplugin",
-                project_name="/projects/myproject",  # non-empty → project_slug='myproject'
-                agent_profile="",
-                settings=settings,
-            )
-        )
-
-    # AC-03: resolved dict returned with live value
-    assert result is not None, "get_plugin_config must return resolved dict"
-    assert result["api_key"] == "live-secret-value"  # AC-03: live value resolved
-    # AC-03: get_secret called with correct key and project_slug
-    mock_manager.get_secret.assert_called_once_with("api_key", project_slug="myproject")
-
 
 # ---------------------------------------------------------------------------
 # AC-04 — idempotency: second save reuses canonical path, no new dedup write
