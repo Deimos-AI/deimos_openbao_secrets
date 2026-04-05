@@ -236,7 +236,8 @@ def _mask_string(text: str, secrets: dict[str, str]) -> str:
     Returns the same object (identity) if no replacements were made.
     """
     result = text
-    for key, value in secrets.items():
+    # MED-03: Sort by descending value length to prevent substring masking bypass
+    for key, value in sorted(secrets.items(), key=lambda kv: -len(kv[1])):
         if not _should_mask(value):
             continue
         if value not in result:

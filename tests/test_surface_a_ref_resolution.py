@@ -54,10 +54,15 @@ def surface_a_mod():
 # ---------------------------------------------------------------------------
 
 def test_bare_allcaps_detected_as_ref(surface_a_mod):
-    """AC-04: bare ALL_CAPS value matches reference regex."""
-    assert surface_a_mod._is_bao_ref("API_KEY_OPENAI") is True   # AC-04: bare ALL_CAPS
-    assert surface_a_mod._is_bao_ref("SOME_SECRET") is True       # AC-04
-    assert surface_a_mod._is_bao_ref("AB") is False                # AC-04: too short (<3 chars after first)
+    """AC-04: bare ALL_CAPS value matches reference regex.
+
+    MED-01: Tightened to require >= 8 chars AND >= 2 underscores.
+    Short/common values like NONE, TRUE, MY_TOKEN are NOT refs.
+    """
+    assert surface_a_mod._is_bao_ref("OPENBAO_API_KEY") is True   # AC-04: 2+ underscores, 8+ chars
+    assert surface_a_mod._is_bao_ref("NONE") is False              # MED-01: too short, no underscores
+    assert surface_a_mod._is_bao_ref("TRUE") is False              # MED-01: common config value
+    assert surface_a_mod._is_bao_ref("AB") is False                # AC-04: too short
     assert surface_a_mod._is_bao_ref("lowercase_key") is False     # AC-04: not ALL_CAPS
     assert surface_a_mod._is_bao_ref("Mixed_Case") is False        # AC-04: mixed case not matched
 
@@ -108,7 +113,7 @@ def test_vault_miss_returns_original_value_and_warns(surface_a_mod, caplog):
     mock_manager.is_available.return_value = True
     mock_cfg = MagicMock()
     mock_cfg.hard_fail_on_unavailable = False
-    settings = {"token": "MY_TOKEN"}
+    settings = {"token": "OPENBAO_AUTH_TOKEN"}  # MED-01: 2+ underscores required
 
     with patch.object(surface_a_mod, "_get_manager", return_value=mock_manager), \
          patch.object(surface_a_mod, "_load_config_if_available", return_value=mock_cfg), \
@@ -119,9 +124,9 @@ def test_vault_miss_returns_original_value_and_warns(surface_a_mod, caplog):
         ))
 
     # AC-07: miss returns None (no modification) -> original dict pass-through
-    assert result is None or result.get("token") == "MY_TOKEN"   # AC-07: original preserved
+    assert result is None or result.get("token") == "OPENBAO_AUTH_TOKEN"  # AC-07
     # WARNING logged about vault miss
-    assert any("MY_TOKEN" in r.message or "not found" in r.message
+    assert any("OPENBAO_AUTH_TOKEN" in r.message or "not found" in r.message
                for r in caplog.records)                          # AC-07: warning emitted
 
 
@@ -133,11 +138,11 @@ def test_unavailable_hard_fail_false_falls_back_to_env(surface_a_mod):
     """AC-08: vault unavailable + hard_fail=False -> os.getenv fallback."""
     mock_cfg = MagicMock()
     mock_cfg.hard_fail_on_unavailable = False
-    settings = {"api_key": "MY_API_KEY"}
+    settings = {"api_key": "OPENBAO_API_KEY"}  # MED-01: 2+ underscores required
 
     with patch.object(surface_a_mod, "_get_manager", return_value=None), \
          patch.object(surface_a_mod, "_load_config_if_available", return_value=mock_cfg), \
-         patch.dict(os.environ, {"MY_API_KEY": "env-fallback-value"}):
+         patch.dict(os.environ, {"OPENBAO_API_KEY": "env-fallback-value"}):
         result = asyncio.run(surface_a_mod.get_plugin_config(
             "some_plugin", "", "", settings
         ))
@@ -154,7 +159,7 @@ def test_unavailable_hard_fail_true_raises(surface_a_mod):
     """AC-09: vault unavailable + hard_fail=True -> RuntimeError raised."""
     mock_cfg = MagicMock()
     mock_cfg.hard_fail_on_unavailable = True
-    settings = {"secret_key": "MY_SECRET"}
+    settings = {"secret_key": "OPENBAO_SECRET_VALUE"}  # MED-01: 2+ underscores required
 
     with patch.object(surface_a_mod, "_get_manager", return_value=None), \
          patch.object(surface_a_mod, "_load_config_if_available", return_value=mock_cfg):

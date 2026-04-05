@@ -345,6 +345,14 @@ class SyncPlugins(ApiHandler):
                 "error": "Plugin sync is disabled (plugin_sync_enabled=false)",
             }
 
+        # MED-06: Block sync over HTTP — secrets must not transit unencrypted
+        if cfg.url.startswith("http://"):
+            return {
+                "ok": False,
+                "error": "Sync requires HTTPS vault URL — refusing to migrate "
+                        "secrets over unencrypted connection",
+            }
+
         vio = _load_vault_io()
         if vio is None:
             return {"ok": False, "error": "vault_io not available"}

@@ -93,6 +93,11 @@ class _MockSecretsManager:
             inst.clear_cache()
 
 
+# LOW-06: Intentional format divergence from production.
+# Production alias_for_key uses "⟦key⟧" format with Unicode brackets.
+# Mock uses "secret_alias(KEY)" — simpler format avoids Unicode handling
+# in test assertions while still exercising the key→alias mapping logic.
+# If production format changes, update this mock to match.
 def _mock_alias_for_key(key: str, placeholder: str = "secret_alias({key})") -> str:
     return placeholder.format(key=key.upper())
 

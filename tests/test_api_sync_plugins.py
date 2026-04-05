@@ -75,6 +75,7 @@ def test_sync_returns_exists_when_key_in_vault(sync_mod, tmp_path):
     mock_vio._vault_read.return_value = {"API_KEY_OPENAI": "already-there"}
     mock_cfg = MagicMock()
     mock_cfg.plugin_sync_enabled = True
+    mock_cfg.url = "https://vault.example.com:8200"  # MED-06: HTTPS required for sync
     mock_cfg.secrets_path = "agentzero"
 
     with patch.object(sync_mod, "load_config", return_value=mock_cfg), \
@@ -104,6 +105,7 @@ def test_sync_migrates_from_env_when_key_absent_in_vault(sync_mod, tmp_path):
     mock_vio.write_if_absent.return_value = True
     mock_cfg = MagicMock()
     mock_cfg.plugin_sync_enabled = True
+    mock_cfg.url = "https://vault.example.com:8200"  # MED-06: HTTPS required for sync
     mock_cfg.secrets_path = "agentzero"
 
     with patch.object(sync_mod, "load_config", return_value=mock_cfg), \
@@ -128,9 +130,9 @@ def test_sync_reports_missing_when_absent_from_both(sync_mod, tmp_path):
     handler = sync_mod.SyncPlugins()
     mock_vio = MagicMock()
     mock_vio._get_manager.return_value = MagicMock()
-    mock_vio._vault_read.return_value = {}
     mock_cfg = MagicMock()
     mock_cfg.plugin_sync_enabled = True
+    mock_cfg.url = "https://vault.example.com:8200"  # MED-06: HTTPS required for sync
     mock_cfg.secrets_path = "agentzero"
 
     with patch.object(sync_mod, "load_config", return_value=mock_cfg), \
@@ -173,6 +175,7 @@ def test_sync_skips_plugins_without_secrets_field(sync_mod, tmp_path):
     mock_vio._get_manager.return_value = MagicMock()
     mock_cfg = MagicMock()
     mock_cfg.plugin_sync_enabled = True
+    mock_cfg.url = "https://vault.example.com:8200"  # MED-06: HTTPS required for sync
     mock_cfg.secrets_path = "agentzero"
 
     with patch.object(sync_mod, "load_config", return_value=mock_cfg), \

@@ -243,11 +243,8 @@ class AuthProxy:
 
         config = PROVIDER_REGISTRY.get(provider)
         if config is None:
-            return web.Response(
-                status=404,
-                text=f"Unknown provider '{provider}'. "
-                     f"Registered: {', '.join(PROVIDER_REGISTRY)}",
-            )
+            # LOW-04: Generic 404 — no provider registry disclosure
+            return web.Response(status=404, text="Not Found")
 
         # Resolve the real credential from OpenBao
         real_key = self._get_secret(config["secret_key"])
@@ -267,17 +264,14 @@ class AuthProxy:
         upstream_url = f"{upstream_base}/{path_suffix}" if path_suffix else upstream_base
         if request.query_string:
             upstream_url = f"{upstream_url}?{request.query_string}"
-
-        # Build outbound headers -- start from the inbound set, then
-        # remove hop-by-hop headers and overwrite the auth header.
-        HOP_BY_HOP = {
-            "connection", "keep-alive", "proxy-authenticate",
-            "proxy-authorization", "te", "trailers", "transfer-encoding",
-            "upgrade", "host",
+        # MED-07: Explicit allowlist of safe headers to forward upstream
+        _FORWARD_HEADERS = {
+            "content-type", "accept", "authorization", "user-agent",
+            "x-request-id", "x-correlation-id",
         }
         outbound_headers = {
             k: v for k, v in request.headers.items()
-            if k.lower() not in HOP_BY_HOP
+            if k.lower() in _FORWARD_HEADERS
         }
         if auth_value:
             outbound_headers[config["auth_header"]] = auth_value

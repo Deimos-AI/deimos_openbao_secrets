@@ -12,9 +12,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, asdict, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +198,15 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
     # Bootstrap token file takes precedence over inline vault_token
     token_file = getattr(config, 'vault_token_file', '') or ''
     if token_file:
-        token_path = Path(token_file)
-        if token_path.exists():
+        token_path = Path(token_file).resolve()  # LOW-05: resolve symlinks
+        # LOW-05: Verify resolved path is within expected directories
+        _allowed_prefixes = (str(Path.cwd()), "/a0/", str(Path.home()))
+        if not any(str(token_path).startswith(p) for p in _allowed_prefixes):
+            logger.warning(
+                "vault_token_file path outside allowed directories: %s — using inline vault_token",
+                token_path,
+            )
+        elif token_path.exists():
             file_token = token_path.read_text().strip()
             if file_token:
                 config.token = file_token
@@ -284,5 +294,10 @@ def resolve_project_path(config: OpenBaoConfig, project_slug: str) -> str:
         path = resolve_project_path(cfg, "alpha")
         # -> "myorg-alpha"
     """
-    # AC-03, AC-04: single canonical resolver — format template with project_slug
+    # MED-02: Validate project_slug to prevent format injection
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', project_slug):
+        raise ValueError(
+            f"Invalid project_slug '{project_slug}': "
+            "must contain only alphanumeric characters, dots, hyphens, and underscores"
+        )
     return config.vault_project_template.format(project_slug=project_slug)

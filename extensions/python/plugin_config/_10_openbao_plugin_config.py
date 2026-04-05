@@ -80,18 +80,30 @@ _IDEMPOTENCY_PREFIX: str = "⟦bao:"
 # ---------------------------------------------------------------------------
 # Settings reference detection — Surface A read hook (AC-04, AC-05)
 # ---------------------------------------------------------------------------
-_BAO_REF_BARE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")  # bare ALL_CAPS identifier
+# MED-01: Tightened regex — bare ALL_CAPS only matches if >= 8 chars and
+# contains at least 2 underscores. This avoids false-positives on common
+# config values like NONE, TRUE, FALSE, DEBUG, INFO, TOKEN.
+_BAO_REF_BARE_RE = re.compile(r"^[A-Z][A-Z0-9_]{7,}$")  # min 8 chars total
 _BAO_REF_PREFIX = "$bao:"                                  # explicit prefix form
 _BAO_DISPLAY_MASK = "[bao-ref: {key}]"                     # webui display mask (AC-10)
 
 
 def _is_bao_ref(value: object) -> bool:
-    """Return True if value looks like a vault reference (bare ALL_CAPS or $bao: prefix)."""
+    """Return True if value looks like a vault reference.
+
+    Accepts two forms:
+      - Explicit prefix: ``$bao:KEY`` (always matched)
+      - Bare ALL_CAPS: only if >= 8 chars AND contains >= 2 underscores
+        (avoids false-positives on NONE, TRUE, FALSE, DEBUG, etc.)
+    """
     if not isinstance(value, str):
         return False
     if value.startswith(_BAO_REF_PREFIX):
         return True
-    return bool(_BAO_REF_BARE_RE.match(value))
+    # Bare ALL_CAPS: require >= 2 underscores to reduce false-positives (MED-01)
+    if _BAO_REF_BARE_RE.match(value) and value.count("_") >= 2:
+        return True
+    return False
 
 
 def _extract_ref_key(value: str) -> str:

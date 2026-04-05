@@ -116,7 +116,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
         if _init_attempted:
             return None
 
-        _init_attempted = True
+        # LOW-02: _init_attempted NOT set here — only set on permanent failures
 
         try:
             # Auto-install dependencies (hvac, tenacity, circuitbreaker)
@@ -141,6 +141,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
 
         if not _ensure_deps():
             logger.warning("OpenBao plugin dependencies not available")
+            _init_attempted = True  # LOW-02: permanent — deps missing
             return None
 
         try:
@@ -151,6 +152,7 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             plugin_dir = find_plugin_dir("deimos_openbao_secrets")
             if not plugin_dir:
                 logger.debug("deimos_openbao_secrets plugin directory not found")
+                _init_attempted = True  # LOW-02: permanent — plugin not installed
                 return None
 
             # Load and validate config
@@ -175,10 +177,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
 
             if not config.enabled:
                 logger.debug("OpenBao plugin is disabled")
+                _init_attempted = True  # LOW-02: permanent — explicitly disabled
                 return None
 
             if errors:
                 logger.warning("OpenBao config validation errors: %s", errors)
+                _init_attempted = True  # LOW-02: permanent — config invalid
                 return None
 
             # Load the client module
@@ -235,6 +239,8 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                         "secrets will be empty until OpenBao recovers"
                     )
 
+            # LOW-02: Mark init complete on success too (prevents re-entry)
+            _init_attempted = True
             return _manager
 
         except ImportError as exc:

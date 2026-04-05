@@ -71,6 +71,7 @@ class OpenBaoSecretsManager(SecretsManager):
         self._bao_client: Optional[OpenBaoClient] = None
         self._bao_lock = threading.RLock()
         self._fallback_active = False
+        self._loading_env_fallback = False  # MED-04: reentrancy guard
 
         # Initialize OpenBao client
         if config.enabled:
@@ -245,10 +246,16 @@ class OpenBaoSecretsManager(SecretsManager):
         """Load secrets from .env files via parent implementation.
 
         Temporarily clears the parent's cache to force a fresh .env read.
+        Reentrancy-safe: returns cached secrets if called recursively (MED-04).
 
         Returns:
             Secrets dict from .env files.
         """
+        # MED-04: Reentrancy guard — return current cache if already loading
+        if self._loading_env_fallback:
+            return self._secrets_cache or {}
+        self._loading_env_fallback = True
+
         # Clear parent cache to force fresh .env read
         old_cache = self._secrets_cache
         self._secrets_cache = None
@@ -261,6 +268,8 @@ class OpenBaoSecretsManager(SecretsManager):
             logger.error("Failed to load .env fallback: %s", exc)
             self._secrets_cache = old_cache
             return old_cache or {}
+        finally:
+            self._loading_env_fallback = False
 
     def get_keys(self) -> List[str]:
         """Get list of secret keys.

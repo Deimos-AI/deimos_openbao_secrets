@@ -102,10 +102,10 @@ class CleanupTerminalSecrets(Extension):
             except Exception:  # pylint: disable=broad-except
                 pass
 
+            # LOW-03: Log only count, not key names (prevents secret name leakage)
             logger.debug(
-                "CleanupTerminalSecrets: cleanup complete — removed %d key(s): %s",
+                "CleanupTerminalSecrets: cleanup complete — removed %d key(s)",
                 len(removed),
-                removed,
             )
 
         except Exception as exc:  # pylint: disable=broad-except
