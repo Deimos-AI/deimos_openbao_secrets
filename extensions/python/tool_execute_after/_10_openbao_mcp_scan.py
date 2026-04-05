@@ -66,8 +66,9 @@ logger = logging.getLogger(__name__)
 # Placeholder tokens — literal Unicode U+27E6 / U+27E7
 # ---------------------------------------------------------------------------
 _PLACEHOLDER_PREFIX: str = "⟦bao:v1:"
+_PLACEHOLDER_SUFFIX: str = "\u27e7"   # ⟧  MATHEMATICAL RIGHT WHITE SQUARE BRACKET
 _PLACEHOLDER_SUFFIX: str = "⟧"
-_IDEMPOTENCY_PREFIX: str = "⟦bao:"
+_IDEMPOTENCY_PREFIX: str = _PLACEHOLDER_PREFIX  # "[bao-ref:REDACTED]"
 
 # text_editor operation names that write file content
 _WRITE_OPS = frozenset({"text_editor:write", "text_editor:patch"})
