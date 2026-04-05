@@ -86,7 +86,7 @@ _KEY_REMAP: "dict[str, str]" = {
     "circuitbreakerthreshold":  "circuit_breaker_threshold",
     "circuitbreakerrecovery":   "circuit_breaker_recovery",
     "fallbacktoenv":            "fallback_to_env",
-    "fallbacktoenvonerror":     "fallback_to_env_on_error",
+    "hardfailonavailable":     "hard_fail_on_unavailable",
     "terminalsecrets":          "terminal_secrets",
     "roleid":                   "role_id",
     "secretidenv":              "secret_id_env",

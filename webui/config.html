@@ -158,19 +158,19 @@
                 <!-- Fallback gating: opt-in error suppression -->
                 <div class="field">
                     <div class="field-label">
-                        <div class="field-title">Allow .env Fallback on Error</div>
+                        <div class="field-title">Hard Fail on Unavailable</div>
                         <div class="field-description">
-                            <strong>Off by default (recommended).</strong>
-                            When <em>off</em>, Agent Zero raises an error immediately if OpenBao is
+                            <strong>On by default (recommended).</strong>
+                            When <em>on</em>, Agent Zero raises an error immediately if OpenBao is
                             unreachable &mdash; secrets are never silently sourced from <code>.env</code>.
-                            Enable only if you explicitly want graceful degradation to <code>.env</code>
+                            Disable only if you explicitly want graceful degradation to <code>.env</code>
                             when OpenBao is unavailable.
-                            <br><em>Requires <strong>Fallback to .env Files</strong> to also be enabled.</em>
+                            <br><em>Disabling requires <strong>Fallback to .env Files</strong> to also be enabled.</em>
                         </div>
                     </div>
                     <div class="field-control">
                         <label class="toggle">
-                            <input type="checkbox" x-model="config.fallback_to_env_on_error" />
+                            <input type="checkbox" x-model="config.hard_fail_on_unavailable" />
                             <span class="toggler"></span>
                         </label>
                     </div>

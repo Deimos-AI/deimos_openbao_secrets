@@ -43,13 +43,13 @@ _FIELD_TO_ENV: Dict[str, str] = {
     "circuit_breaker_threshold": "CB_THRESHOLD",
     "circuit_breaker_recovery": "CB_RECOVERY",
     "fallback_to_env": "FALLBACK_TO_ENV",
-    "fallback_to_env_on_error": "FALLBACK_TO_ENV_ON_ERROR",
+    "hard_fail_on_unavailable": "HARD_FAIL_ON_UNAVAILABLE",
     "vault_namespace": "VAULT_NAMESPACE",
     "vault_token_file": "VAULT_TOKEN_FILE",
 }
 
 # Fields with boolean type
-_BOOL_FIELDS = frozenset({"enabled", "tls_verify", "fallback_to_env", "fallback_to_env_on_error"})
+_BOOL_FIELDS = frozenset({"enabled", "tls_verify", "fallback_to_env", "hard_fail_on_unavailable"})
 # Fields with int type
 _INT_FIELDS = frozenset({"cache_ttl", "retry_attempts", "circuit_breaker_threshold", "circuit_breaker_recovery"})
 # Fields with float type
@@ -82,8 +82,8 @@ class OpenBaoConfig:
         circuit_breaker_threshold: Failures before circuit opens.
         circuit_breaker_recovery: Seconds before circuit half-opens.
         fallback_to_env: Fall back to .env files when OpenBao is unavailable.
-        fallback_to_env_on_error: When False (default), raise OpenBaoUnavailableError on
-            unavailability. When True, allow graceful .env fallback (opt-in).
+        hard_fail_on_unavailable: When True (default), raise OpenBaoUnavailableError on
+            unavailability. When False, allow graceful .env fallback (opt-in).
     """
 
     enabled: bool = False
@@ -105,7 +105,7 @@ class OpenBaoConfig:
     circuit_breaker_threshold: int = 5
     circuit_breaker_recovery: int = 60
     fallback_to_env: bool = True
-    fallback_to_env_on_error: bool = False
+    hard_fail_on_unavailable: bool = True
     vault_namespace: str = ""
     vault_token_file: str = ""
     terminal_secrets: list = field(default_factory=list)  # REM-032: names of secrets to surface in terminal output

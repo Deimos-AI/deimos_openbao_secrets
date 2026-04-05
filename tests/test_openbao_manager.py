@@ -112,13 +112,13 @@ def base_config():
         circuit_breaker_threshold=3,
         circuit_breaker_recovery=5,
         fallback_to_env=True,
-        fallback_to_env_on_error=True,
+        hard_fail_on_unavailable=False,
     )
 
 
 @pytest.fixture
 def disabled_config():
-    return OpenBaoConfig(enabled=False, fallback_to_env=True, fallback_to_env_on_error=True)
+    return OpenBaoConfig(enabled=False, fallback_to_env=True, hard_fail_on_unavailable=False)
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ def no_fallback_config():
         auth_method="token",
         token="hvs.test",
         fallback_to_env=False,
-        fallback_to_env_on_error=True,
+        hard_fail_on_unavailable=False,
     )
 
 

@@ -16,7 +16,7 @@ retry_attempts: 3
 circuit_breaker_threshold: 5
 circuit_breaker_recovery: 60
 fallback_to_env: true
-fallback_to_env_on_error: false
+hard_fail_on_unavailable: true
 
 # Namespace support (OpenBao 2.5.x OSS — confirmed working)
 # Empty string = root namespace (default, backwards compatible)

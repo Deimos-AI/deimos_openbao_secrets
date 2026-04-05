@@ -69,7 +69,7 @@ All fields are defined in `default_config.yaml` and may be overridden in the per
 | `circuit_breaker_threshold` | `5` | Consecutive failures before circuit opens |
 | `circuit_breaker_recovery` | `60` | Circuit breaker recovery window in seconds |
 | `fallback_to_env` | `true` | Fall back to `.env` on auth/transient failure |
-| `fallback_to_env_on_error` | `false` | `false` = hard fail with `OpenBaoUnavailableError`; `true` = graceful `.env` fallback |
+| `hard_fail_on_unavailable` | `true` | `true` = hard fail with `OpenBaoUnavailableError` (default); `false` = graceful `.env` fallback |
 | `vault_namespace` | `""` | OpenBao 2.5.x OSS namespace — empty string = root namespace (default, backwards compatible) |
 | `vault_token_file` | `""` | Bootstrap token file path (preferred over inline token for production). Falls back to inline `vault_token` config value if empty or file missing. |
 | `secret_field_patterns` | `["*key*", "*token*", "*secret*", "*password*", "*auth*"]` | **Surface A** — fnmatch patterns matched against plugin config dict keys (case-insensitive). Matched fields containing string values are extracted to OpenBao on save. |
@@ -131,13 +131,28 @@ Token is held in memory only and renewed automatically via the existing renewal 
 
 | Scenario | Behaviour |
 |---|---|
-| OpenBao unreachable, `fallback_to_env_on_error=false` (default) | Hard fail: `OpenBaoUnavailableError` |
-| OpenBao unreachable, `fallback_to_env_on_error=true` | Graceful fallback to `.env` |
+| OpenBao unreachable, `hard_fail_on_unavailable=true` (default) | Hard fail: `OpenBaoUnavailableError` |
+| OpenBao unreachable, `hard_fail_on_unavailable=false` | Graceful fallback to `.env` |
 | KV write fails during Surface B scan | Atomic rollback — original file unchanged; exception raised |
 | `bao` placeholder in shell arg | Hard error — never silently passed to shell |
 | MCP credential rotation needed | Click **Refresh MCP Credentials** in plugin settings, or `POST /api/plugins/deimos_openbao_secrets/rotate_mcp` |
 | Namespace token expires | `OpenBaoUnavailableError` on next KV read |
 | Plugin own config intercepted (bug) | Prevented by bootstrapping exclusion guard |
+
+## Migration Note — `fallback_to_env_on_error` Renamed (REM-008)
+
+The `fallback_to_env_on_error` config key has been **renamed** to `hard_fail_on_unavailable`
+with **inverted semantics** in this release:
+
+| Old key | Old value | New key | New value | Behaviour |
+|---------|-----------|---------|-----------|----------|
+| `fallback_to_env_on_error` | `false` (default) | `hard_fail_on_unavailable` | `true` (default) | Hard fail: raises `OpenBaoUnavailableError` |
+| `fallback_to_env_on_error` | `true` | `hard_fail_on_unavailable` | `false` | Graceful fallback to `.env` |
+
+**Action required:** If you have `fallback_to_env_on_error` set in your `config.json`,
+`default_config.yaml`, or `OPENBAO_FALLBACK_TO_ENV_ON_ERROR` env var, rename the key
+and invert the boolean value. The `OPENBAO_FALLBACK_TO_ENV_ON_ERROR` env var is replaced
+by `OPENBAO_HARD_FAIL_ON_UNAVAILABLE`.
 
 ---
 
