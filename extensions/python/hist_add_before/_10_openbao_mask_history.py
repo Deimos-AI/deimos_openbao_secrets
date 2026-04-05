@@ -70,7 +70,7 @@ logger = logging.getLogger(__name__)
 # tokens (26+), or API keys (32+).  _MIN_SECRET_LEN=4 was the original guard
 # but caused REM-034: short secret values matching and stripping arbitrary
 # uppercase characters from tool output.
-_MIN_SECRET_LEN = 12  # AC-02 / REM-034: prevent short secrets corrupting output
+_MIN_SECRET_LEN = 6  # AC-01 / REM-034b: lowered from 12; _should_mask() guards prevent false positives
 
 
 # ---------------------------------------------------------------------------
@@ -209,23 +209,62 @@ class OpenBaoMaskHistory(Extension):
 # Content masking helpers (module-level for testability)
 # ---------------------------------------------------------------------------
 
+_TOKEN_PATTERN = re.compile(
+    r'[0-9].*[A-Za-z]|[A-Za-z].*[0-9]'  # alphanumeric mix
+    r'|[^A-Za-z0-9]',                       # contains special chars
+)
+_RISKY_PATTERN = re.compile(r'^[a-z]+$')
+
+
+def _should_mask(val: str) -> bool:
+    """Decide if a secret value is safe to mask.
+
+    AC-02: token-like secrets (alphanumeric mix, special chars) masked at len >= 6.
+    AC-03: pure-alpha short secrets (len < 20) use word-boundary replacement only.
+    AC-04: passphrases (3+ words or len >= 20) masked as full phrase.
+    Never raises — returns False on any unexpected input.
+    """
+    if not val or len(val) < _MIN_SECRET_LEN:
+        return False
+    # Always mask: contains digits, special chars, or uppercase (token-like)
+    if _TOKEN_PATTERN.search(val):
+        return True
+    # Risky: pure lowercase alpha — could be a dictionary word
+    if _RISKY_PATTERN.match(val):
+        words = val.split()
+        if len(words) >= 3 or len(val) >= 20:
+            return True  # passphrase — safe to mask as full phrase (AC-04)
+        return len(val) >= 12  # short dict-word: require 12+ for safety
+    # Mixed-case or other — mask if len >= 6
+    return len(val) >= 6
+
+
 def _mask_string(text: str, secrets: dict) -> str:
-    """Replace all known secret values in *text* with their placeholder aliases.
+    """Replace secret values in *text* with their placeholder aliases.
 
-    Iterates over the secrets dict and replaces each value whose length is
-    at least _MIN_SECRET_LEN with alias_for_key(key).  The alias is built by
-    helpers.secrets.alias_for_key() -- the literal placeholder format is NOT
-    hardcoded here.
+    Uses _should_mask() to determine per-value masking eligibility.
+    Pure-alpha short secrets (< 20 chars) use word-boundary replacement
+    to avoid corrupting normal text substrings (AC-03).
+    Token-like and passphrase secrets are replaced globally (AC-02/AC-04).
 
-    Returns the same object if no replacements were made (identity comparison
-    safe for the caller to check with ``is``).
+    Returns the same object (identity) if no replacements were made.
     """
     result = text
     for key, value in secrets.items():
-        if not value or len(value) < _MIN_SECRET_LEN:
+        if not _should_mask(value):
             continue
-        if value in result:
-            replacement = alias_for_key(key)
+        if value not in result:
+            continue
+        replacement = alias_for_key(key)
+        if _RISKY_PATTERN.match(value) and len(value) < 20:
+            # Pure-alpha short secret — word-boundary match only (AC-03)
+            result = re.sub(
+                r'\b' + re.escape(value) + r'\b',
+                replacement,
+                result,
+            )
+        else:
+            # Token-like or long passphrase — safe full replace (AC-02/AC-04)
             result = result.replace(value, replacement)
     return result
 
