@@ -23,6 +23,7 @@ The mcp_servers setting on disk retains placeholder strings unchanged.
 Only the in-memory MCPConfig instance receives live credential values.
 """
 from __future__ import annotations
+from typing import Optional
 
 import importlib
 import importlib.util
@@ -88,6 +89,7 @@ logger = logging.getLogger(__name__)
 
 # Placeholder tokens -- literal Unicode U+27E6 / U+27E7
 _BAO_PREFIX: str = "⟦bao:v1:"
+_BAO_SUFFIX: str = "⟧"   # ⟧  MATHEMATICAL RIGHT WHITE SQUARE BRACKET
 _BAO_SUFFIX: str = "⟧"
 
 

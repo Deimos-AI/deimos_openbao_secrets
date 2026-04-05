@@ -1,0 +1,397 @@
+"""Tests for api/secrets.py — SecretsManager API handler.
+
+Covers AC-02 (file creation) and AC-05 (14 test cases):
+  _get_client no_credentials/token_auth, _get_path no_project/with_project,
+  list, get key_found/key_not_found, set, delete key_found/key_not_found,
+  bulk_set valid/parse_errors/empty_text, unknown_action.
+
+Satisfies: AC-02, AC-05
+
+Notes on mock strategy:
+  secrets.py does `import hvac` inside _get_client() and
+  `import hvac.exceptions` inside process() — both function-local.
+  patch.object(mod, 'hvac', ...) is ignored because local `import hvac`
+  reads sys.modules directly.
+  Correct approach: patch.dict(sys.modules, {'hvac': ..., 'hvac.exceptions': ...}).
+
+  For action tests, use patch.object(mod, '_get_client', ...) to bypass
+  auth entirely, which also removes the need to patch hvac in those tests.
+"""
+import asyncio
+import importlib.util
+import os
+import sys
+from unittest.mock import MagicMock, patch
+import pytest
+
+
+@pytest.fixture(scope="module")
+def secrets_mod():
+    """Load api/secrets.py with A0 runtime deps stubbed.
+
+    Satisfies: AC-02 (file created and loadable)
+    """
+    mock_api = MagicMock()
+
+    class _StubApiHandler:
+        pass
+
+    mock_api.ApiHandler = _StubApiHandler
+    mock_api.Request = MagicMock
+    mock_api.Response = MagicMock
+    sys.modules.setdefault("helpers.api", mock_api)
+    sys.modules.setdefault("helpers.plugins", MagicMock())
+    # hvac stub — _get_client() does `import hvac` + `import hvac.exceptions`
+    mock_hvac = MagicMock()
+    sys.modules.setdefault("hvac", mock_hvac)
+    sys.modules.setdefault("hvac.exceptions", MagicMock())
+
+    path = os.path.join(os.path.dirname(__file__), "..", "api", "secrets.py")
+    spec = importlib.util.spec_from_file_location("api_secrets", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# ---------------------------------------------------------------------------
+# AC-05: _get_client
+# ---------------------------------------------------------------------------
+
+def test_get_client_no_credentials_raises(secrets_mod):
+    """AC-05: _get_client with no env credentials raises RuntimeError.
+
+    Satisfies: AC-05 (_get_client no_credentials)
+    """
+    mock_hvac = MagicMock()
+    mock_hvac.Client.return_value.is_authenticated.return_value = False
+    mock_cfg = MagicMock()
+    mock_cfg.url = "http://localhost:8200"
+    mock_cfg.tls_verify = True
+    mock_cfg.tls_ca_cert = ""
+    mock_cfg.timeout = 10
+
+    with patch.object(secrets_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}), \
+         patch.dict(os.environ, {}, clear=True):  # no OPENBAO_TOKEN or ROLE_ID
+        with pytest.raises(RuntimeError):          # AC-05: no_credentials
+            secrets_mod._get_client()
+
+
+def test_get_client_token_auth_succeeds(secrets_mod):
+    """AC-05: _get_client with OPENBAO_TOKEN returns (client, cfg).
+
+    Satisfies: AC-05 (_get_client token_auth_succeeds)
+    """
+    mock_hvac = MagicMock()
+    mock_client = mock_hvac.Client.return_value
+    mock_client.is_authenticated.return_value = True
+    mock_cfg = MagicMock()
+    mock_cfg.url = "http://localhost:8200"
+    mock_cfg.tls_verify = True
+    mock_cfg.tls_ca_cert = ""
+    mock_cfg.timeout = 10
+
+    with patch.object(secrets_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}), \
+         patch.dict(os.environ, {"OPENBAO_TOKEN": "s.test-token"}):
+        client, cfg = secrets_mod._get_client()  # AC-05: token_auth_succeeds
+
+    assert client is mock_client  # AC-05
+    assert cfg is mock_cfg        # AC-05
+
+
+# ---------------------------------------------------------------------------
+# AC-05: _get_path
+# ---------------------------------------------------------------------------
+
+def test_get_path_without_project(secrets_mod):
+    """AC-05: _get_path with no project returns base secrets_path.
+
+    Satisfies: AC-05 (_get_path no_project)
+    """
+    mock_cfg = MagicMock()
+    mock_cfg.secrets_path = "deimos"
+    result = secrets_mod._get_path(mock_cfg)   # AC-05: get_path_no_project
+    assert result == "deimos"                   # AC-05
+
+
+def test_get_path_with_project(secrets_mod):
+    """AC-05: _get_path with project_name appends to base path.
+
+    Satisfies: AC-05 (_get_path with_project)
+    """
+    mock_cfg = MagicMock()
+    mock_cfg.secrets_path = "deimos"
+    result = secrets_mod._get_path(mock_cfg, "my-app")  # AC-05: get_path_with_project
+    assert result == "deimos/my-app"                     # AC-05
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by action tests
+# ---------------------------------------------------------------------------
+
+def _make_action_mocks():
+    """Return (mock_client, mock_cfg) suitable for action-level tests."""
+    mock_client = MagicMock()
+    mock_client.is_authenticated.return_value = True
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {"API_KEY": "sk-12345", "DB_PASS": "hunter2"}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+    return mock_client, mock_cfg
+
+
+# ---------------------------------------------------------------------------
+# AC-05: list action
+# ---------------------------------------------------------------------------
+
+def test_list_action_returns_keys(secrets_mod):
+    """AC-05: list action returns ok=True with sorted key list.
+
+    Satisfies: AC-05 (list_action)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client, mock_cfg = _make_action_mocks()
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "list"}, MagicMock()
+        ))
+
+    assert result["ok"] is True                          # AC-05: list_action
+    keys = [s["key"] for s in result["secrets"]]
+    assert "API_KEY" in keys                             # AC-05
+    assert "DB_PASS" in keys                             # AC-05
+
+
+# ---------------------------------------------------------------------------
+# AC-05: get action — key_found / key_not_found
+# ---------------------------------------------------------------------------
+
+def test_get_action_key_found(secrets_mod):
+    """AC-05: get action with existing key returns ok=True and value.
+
+    Satisfies: AC-05 (get_action key_found)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {"API_KEY": "sk-12345"}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "get", "key": "API_KEY"}, MagicMock()
+        ))
+
+    assert result["ok"] is True              # AC-05: get_key_found
+    assert result["key"] == "API_KEY"        # AC-05
+    assert result["value"] == "sk-12345"     # AC-05
+
+
+def test_get_action_key_not_found(secrets_mod):
+    """AC-05: get action with missing key returns ok=False.
+
+    Satisfies: AC-05 (get_action key_not_found)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "get", "key": "MISSING"}, MagicMock()
+        ))
+
+    assert result["ok"] is False                  # AC-05: get_key_not_found
+    assert "Key not found" in result["error"]     # AC-05
+
+
+# ---------------------------------------------------------------------------
+# AC-05: set action
+# ---------------------------------------------------------------------------
+
+def test_set_action_saves_pairs(secrets_mod):
+    """AC-05: set action writes key-value pairs and returns ok=True.
+
+    Satisfies: AC-05 (set_action)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    pairs = [{"key": "NEW_KEY", "value": "new-value"}]
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "set", "pairs": pairs}, MagicMock()
+        ))
+
+    assert result["ok"] is True                      # AC-05: set_action
+    mock_client.secrets.kv.v2.create_or_update_secret.assert_called_once()  # AC-05
+
+
+# ---------------------------------------------------------------------------
+# AC-05: delete action — key_found / key_not_found
+# ---------------------------------------------------------------------------
+
+def test_delete_action_key_found(secrets_mod):
+    """AC-05: delete action removes existing key and returns ok=True.
+
+    Satisfies: AC-05 (delete_action key_found)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {"OLD_KEY": "old-val"}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "delete", "key": "OLD_KEY"}, MagicMock()
+        ))
+
+    assert result["ok"] is True                      # AC-05: delete_key_found
+    assert "Deleted" in result["message"]            # AC-05
+
+
+def test_delete_action_key_not_found(secrets_mod):
+    """AC-05: delete action with missing key returns ok=False.
+
+    Satisfies: AC-05 (delete_action key_not_found)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "delete", "key": "GHOST"}, MagicMock()
+        ))
+
+    assert result["ok"] is False                      # AC-05: delete_key_not_found
+    assert "Key not found" in result["error"]         # AC-05
+
+
+# ---------------------------------------------------------------------------
+# AC-05: bulk_set — valid / parse_errors / empty_text
+# ---------------------------------------------------------------------------
+
+def test_bulk_set_valid_text(secrets_mod):
+    """AC-05: bulk_set valid KEY=VALUE text writes all pairs.
+
+    Satisfies: AC-05 (bulk_set valid_text)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {}}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "bulk_set", "text": "ALPHA=one\nBETA=two\n"},
+            MagicMock()
+        ))
+
+    assert result["ok"] is True                                   # AC-05: bulk_set_valid
+    mock_client.secrets.kv.v2.create_or_update_secret.assert_called_once()  # AC-05
+
+
+def test_bulk_set_parse_error(secrets_mod):
+    """AC-05: bulk_set malformed line returns parse error.
+
+    Satisfies: AC-05 (bulk_set parse_errors)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "bulk_set", "text": "VALID=value\nNO_EQUALS_HERE\n"},
+            MagicMock()
+        ))
+
+    assert result["ok"] is False                    # AC-05: bulk_set_parse_errors
+    assert "Parse errors" in result["error"]        # AC-05
+
+
+def test_bulk_set_empty_text(secrets_mod):
+    """AC-05: bulk_set with empty text returns error.
+
+    Satisfies: AC-05 (bulk_set empty_text)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "bulk_set", "text": "   "}, MagicMock()
+        ))
+
+    assert result["ok"] is False                    # AC-05: bulk_set_empty_text
+
+
+# ---------------------------------------------------------------------------
+# AC-05: unknown_action
+# ---------------------------------------------------------------------------
+
+def test_unknown_action_returns_error(secrets_mod):
+    """AC-05: unrecognised action returns ok=False.
+
+    Satisfies: AC-05 (unknown_action)
+    """
+    handler = secrets_mod.SecretsManager()
+    mock_client = MagicMock()
+    mock_cfg = MagicMock()
+    mock_cfg.mount_point = "secret"
+    mock_cfg.secrets_path = "deimos"
+
+    with patch.object(secrets_mod, "_ensure_hvac", return_value=True), \
+         patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process(
+            {"action": "explode"}, MagicMock()
+        ))
+
+    assert result["ok"] is False                    # AC-05: unknown_action
+    assert "Unknown action" in result["error"]      # AC-05
