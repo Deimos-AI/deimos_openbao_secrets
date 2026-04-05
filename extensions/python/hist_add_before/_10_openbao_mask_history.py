@@ -65,9 +65,12 @@ from helpers.secrets import alias_for_key
 
 logger = logging.getLogger(__name__)
 
-# Minimum secret value length to scan for.  Very short values (< 4 chars)
-# are skipped to avoid false-positive replacements in normal text.
-_MIN_SECRET_LEN = 4
+# Minimum secret value length to scan for.  Values shorter than this are
+# skipped to avoid false-positive replacements — real secrets are UUIDs (36+),
+# tokens (26+), or API keys (32+).  _MIN_SECRET_LEN=4 was the original guard
+# but caused REM-034: short secret values matching and stripping arbitrary
+# uppercase characters from tool output.
+_MIN_SECRET_LEN = 12  # AC-02 / REM-034: prevent short secrets corrupting output
 
 
 # ---------------------------------------------------------------------------

@@ -64,7 +64,10 @@ logger = logging.getLogger(__name__)
 
 # Minimum secret value length — values shorter than this are too likely to
 # produce false-positive replacements in normal text output.
-_MIN_SECRET_LEN = 8
+# Raised from 8 to 12 (REM-034): real secrets are UUIDs (36+), tokens (26+),
+# API keys (32+). A len=7 secret was causing systematic stripping of uppercase
+# characters from code_execution_tool output.
+_MIN_SECRET_LEN = 12  # AC-01 / REM-034: prevent short secrets corrupting output
 
 
 class OpenBaoMaskOutput(Extension):
