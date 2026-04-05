@@ -140,6 +140,22 @@ _vault_read = _vio_vault_read
 _vault_write = _vio_vault_write
 _sanitize_component = _vio_sanitize_component
 
+# ---------------------------------------------------------------------------
+# Pattern loader — reads secret_field_patterns from plugin config
+# ---------------------------------------------------------------------------
+
+def _get_patterns() -> list:
+    """Return fnmatch patterns identifying secret-valued plugin config keys.
+
+    Delegates to vault_io._get_patterns() when available (which reads from
+    the live plugin config). Falls back to hardcoded default_config.yaml
+    defaults so Surface A remains functional even if vault_io cannot load.
+    """
+    vio = _load_vault_io()
+    if vio and hasattr(vio, "_get_patterns"):
+        return vio._get_patterns()
+    # Hardcoded defaults matching default_config.yaml secret_field_patterns
+    return ["*key*", "*token*", "*secret*", "*password*", "*auth*"]
 
 
 # ---------------------------------------------------------------------------
