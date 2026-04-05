@@ -101,7 +101,7 @@ def test_sealed_vault_returns_error(health_mod):
     with patch.object(health_mod, "_ensure_hvac", return_value=True), \
          patch.dict(sys.modules, {"hvac": mock_hvac}):
         result = asyncio.run(handler.process(
-            {"config": {"url": "http://localhost:8200"}}, MagicMock()
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
         ))
 
     assert result["ok"] is False                    # AC-04: sealed_vault
@@ -132,7 +132,7 @@ def test_token_auth_missing_env_returns_error(health_mod):
          patch.dict(sys.modules, {"hvac": mock_hvac}), \
          patch.dict(os.environ, {}, clear=True):   # ensure OPENBAO_TOKEN absent
         result = asyncio.run(handler.process(
-            {"config": {"url": "http://localhost:8200"}}, MagicMock()
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
         ))
 
     assert result["ok"] is False                         # AC-04: token_auth_missing_env
@@ -164,7 +164,7 @@ def test_token_auth_success(health_mod):
          patch.dict(sys.modules, {"hvac": mock_hvac}), \
          patch.dict(os.environ, {"OPENBAO_TOKEN": "s.valid-token"}):
         result = asyncio.run(handler.process(
-            {"config": {"url": "http://localhost:8200"}}, MagicMock()
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
         ))
 
     assert result["ok"] is True                           # AC-04: token_auth_success
@@ -197,7 +197,7 @@ def test_approle_auth_success(health_mod):
          patch.dict(sys.modules, {"hvac": mock_hvac}), \
          patch.dict(os.environ, {"OPENBAO_ROLE_ID": "my-role", "OPENBAO_SECRET_ID": "my-secret"}):
         result = asyncio.run(handler.process(
-            {"config": {"url": "http://localhost:8200"}}, MagicMock()
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
         ))
 
     assert result["ok"] is True                           # AC-04: approle_auth_success
@@ -229,7 +229,7 @@ def test_approle_login_failure_returns_error(health_mod):
          patch.dict(sys.modules, {"hvac": mock_hvac}), \
          patch.dict(os.environ, {"OPENBAO_ROLE_ID": "bad-role"}):
         result = asyncio.run(handler.process(
-            {"config": {"url": "http://localhost:8200"}}, MagicMock()
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
         ))
 
     assert result["ok"] is False                          # AC-04: approle_login_failure

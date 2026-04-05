@@ -11,6 +11,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -115,15 +116,46 @@ def _get_client():
     return client, cfg
 
 
+def _sanitize_path_component(value: str) -> str:
+    """CRIT-03: Sanitize a string for safe use as a KV v2 vault path component.
+
+    Strips path separators, dotdot sequences, and non-safe characters.
+    Raises ValueError if the sanitized result is empty (after stripping).
+    Mirrors helpers/vault_io._sanitize_component with path-traversal prevention.
+    """
+    original = value
+    # Remove path separators — prevent ../../ traversal
+    for sep in ("/", "\\"):
+        value = value.replace(sep, "_")
+    # Collapse dotdot sequences (..)
+    value = re.sub(r"\.\. +", "_", value)
+    # Replace remaining non-safe chars (allow alphanumeric, _, ., -)
+    value = re.sub(r"[^a-zA-Z0-9_.\-]", "_", value)
+    # Strip leading dots
+    value = value.lstrip(".")
+    if not value:
+        raise ValueError(
+            f"path component {original!r} sanitizes to empty — rejected (CRIT-03)"
+        )
+    return value
+
+
 def _get_path(cfg, project_name: str = "") -> str:
-    """Build the secrets path, optionally scoped to a project."""
+    """Build the secrets path, optionally scoped to a project.
+
+    CRIT-03: project_name is sanitized to prevent vault path traversal
+    (e.g., ../../admin could expose arbitrary KV paths).
+    """
     path = cfg.secrets_path  # REM-003: attribute access on OpenBaoConfig
     if project_name:
-        path = f"{path}/{project_name}"
+        safe_name = _sanitize_path_component(project_name)  # CRIT-03
+        path = f"{path}/{safe_name}"
     return path
 
 
 class SecretsManager(ApiHandler):
+
+    requires_auth = True  # HIGH-05: SecretsManager requires authentication
 
     @classmethod
     def requires_csrf(cls) -> bool:
@@ -143,8 +175,11 @@ class SecretsManager(ApiHandler):
 
         mount = cfg.mount_point  # REM-003: attribute access on OpenBaoConfig
         project_name = input.get("project_name", "")
-        path = _get_path(cfg, project_name)
         action = input.get("action", "")
+        try:
+            path = _get_path(cfg, project_name)  # CRIT-03: ValueError on unsafe project_name
+        except ValueError as exc:
+            return {"ok": False, "error": f"Invalid project_name: {exc}"}
 
         try:
             if action == "list":
@@ -275,6 +310,9 @@ def _load_vault_io():
 
 
 class SyncPlugins(ApiHandler):
+
+    requires_auth = True  # HIGH-05: SyncPlugins requires authentication
+
     """Cross-plugin secret discovery and .env \u2192 OpenBao migration endpoint.
 
     POST /api/plugins/deimos_openbao_secrets/sync-plugins
@@ -334,7 +372,7 @@ class SyncPlugins(ApiHandler):
                 if not key:
                     continue
 
-                vault_path = f"{secrets_path}/{plugin_name}"
+                vault_path = f"{secrets_path}/{_sanitize_path_component(plugin_name)}"  # CRIT-03
                 existing = vio._vault_read(manager, vault_path) or {}
 
                 if key in existing:

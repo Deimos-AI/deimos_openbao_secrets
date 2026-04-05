@@ -1,0 +1,16 @@
+{
+  "url": "https://vault.example.com:8200",
+  "enabled": false,
+  "auth_method": "token",
+  "mount_point": "secret",
+  "secrets_path": "agentzero",
+  "tls_verify": true,
+  "tls_ca_cert": "",
+  "timeout": 10,
+  "cache_ttl": 300,
+  "retry_attempts": 3,
+  "circuit_breaker_threshold": 5,
+  "circuit_breaker_recovery": 60,
+  "fallback_to_env": false,
+  "hard_fail_on_unavailable": true
+}

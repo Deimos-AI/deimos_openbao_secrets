@@ -53,20 +53,3 @@ class OpenBaoDefaultFactory(Extension):
         spec.loader.exec_module(fc_mod)
 
         return fc_mod.get_openbao_manager()
-
-        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
-        if not plugin_dir:
-            return None
-
-        # Dynamically import factory_common from the plugin directory
-        fc_path = os.path.join(plugin_dir, "helpers", "factory_common.py")
-        if not os.path.exists(fc_path):
-            return None
-
-        spec = importlib.util.spec_from_file_location(
-            "openbao_secrets_factory_common", fc_path
-        )
-        fc_mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(fc_mod)
-
-        return fc_mod.get_openbao_manager()

@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 from helpers.api import ApiHandler, Request, Response
 # ---------------------------------------------------------------------------
 # Plugin helper bootstrap — load helpers/config.py via importlib.util.
@@ -69,6 +70,39 @@ def _ensure_hvac():
         return False
 
 
+# ---------------------------------------------------------------------------
+# CRIT-02: SSRF protection — URL validation before hvac.Client()
+# ---------------------------------------------------------------------------
+_SSRF_BLOCKED_HOSTS: frozenset = frozenset({
+    "169.254.169.254",           # AWS / Azure / GCP IMDS
+    "metadata.google.internal",  # GCP metadata endpoint
+    "localhost",
+    "127.0.0.1",
+    "::1",
+})
+
+
+def _validate_openbao_url(url: str) -> "str | None":
+    """CRIT-02: Validate OpenBao URL for SSRF safety.
+
+    Returns an error string if the URL is unsafe, None if safe to proceed.
+    Blocks non-HTTP(S) schemes and known SSRF targets (cloud IMDS, loopback).
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "Invalid URL format"
+    if parsed.scheme not in ("http", "https"):
+        return f"URL scheme {parsed.scheme!r} not allowed — only http/https are permitted"
+    hostname = (parsed.hostname or "").lower().strip()
+    if hostname in _SSRF_BLOCKED_HOSTS:
+        return f"URL host {hostname!r} is blocked (SSRF protection)"
+    # Block entire link-local 169.254.0.0/16 range (IMDS)
+    if hostname.startswith("169.254."):
+        return f"URL host {hostname!r} is in link-local IMDS range — blocked (SSRF protection)"
+    return None
+
+
 class TestConnection(ApiHandler):
     """Test OpenBao connectivity and authentication."""
 
@@ -98,6 +132,12 @@ class TestConnection(ApiHandler):
 
         if not url:
             return {"ok": False, "error": "No OpenBao URL configured"}
+
+
+        # CRIT-02: Validate URL before passing to hvac.Client() — SSRF protection
+        url_err = _validate_openbao_url(url)
+        if url_err:
+            return {"ok": False, "error": url_err}
 
         try:
             verify = tls_ca_cert if tls_ca_cert else tls_verify

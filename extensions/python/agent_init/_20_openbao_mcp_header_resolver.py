@@ -111,6 +111,18 @@ _get_manager = _vio_get_manager
 _get_hvac = _vio_get_hvac
 _vault_read = _vio_vault_read
 
+# ---------------------------------------------------------------------------
+# Placeholder token constants — must match Surface A / Surface B values exactly.
+# CRIT-01: These were absent, causing NameError on every MCP header resolution
+#          call (resolve_mcp_server_headers completely broken at runtime).
+# Values mirror plugin_config/_10_openbao_plugin_config.py and
+#          tool_execute_after/_10_openbao_mcp_scan.py constants.
+# ---------------------------------------------------------------------------
+_ANY_BAO_PREFIX: str = "bao:"         # fast-path: every managed placeholder starts here
+_PLACEHOLDER_PREFIX: str = "bao:v1:"  # Surface A/B canonical placeholder prefix
+_PLACEHOLDER_SUFFIX: str = "\u27e7"   # ⟧  MATHEMATICAL RIGHT WHITE SQUARE BRACKET
+
+
 
 # ---------------------------------------------------------------------------
 # Extension class (agent_init no-op)

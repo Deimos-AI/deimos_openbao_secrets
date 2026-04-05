@@ -101,6 +101,11 @@ def _vault_read(manager: Any, path: str) -> Optional[dict]:
     if client is None:
         return None
     try:
+        import hvac.exceptions as _hvac_exc
+    except ImportError:
+        _hvac_exc = None  # type: ignore[assignment]
+
+    try:
         resp = client.secrets.kv.v2.read_secret_version(
             path=path,
             mount_point=mount,
@@ -109,8 +114,44 @@ def _vault_read(manager: Any, path: str) -> Optional[dict]:
         if resp:
             return resp.get("data", {}).get("data") or {}
         return None
-    except Exception:  # InvalidPath, Forbidden, connection error, etc.
+    except Exception as _exc:
+        # HIGH-04: differentiate exception types — Forbidden re-raises (permission
+        # error must be surfaced), InvalidPath returns None (legitimate miss),
+        # everything else logs a WARNING and returns None.
+        if _hvac_exc is not None and isinstance(_exc, _hvac_exc.Forbidden):
+            _logger.error(
+                "vault_io._vault_read: permission denied at %r — re-raising", path
+            )
+            raise
+        if _hvac_exc is not None and isinstance(_exc, _hvac_exc.InvalidPath):
+            return None  # legitimate miss — path does not exist
+        _logger.warning(
+            "vault_io._vault_read: unexpected error reading %r: %s", path, _exc
+        )
         return None
+
+
+def _get_cas_version(manager: Any, path: str) -> Optional[int]:
+    """Return current KV v2 version at path for CAS, or None if unavailable.
+
+    HIGH-02: Used by write_if_absent to obtain a CAS version before writing.
+    Returns None (disables CAS) when: client unavailable, path does not exist
+    yet, or metadata read fails for any reason.
+    """
+    client, mount = _get_hvac(manager)
+    if client is None:
+        return None
+    try:
+        meta_resp = client.secrets.kv.v2.read_secret_metadata(
+            path=path, mount_point=mount
+        )
+        if meta_resp and isinstance(meta_resp, dict):
+            versions = meta_resp.get("data", {}).get("versions", {})
+            if versions and isinstance(versions, dict):
+                return max(int(v) for v in versions)
+        return None
+    except Exception:
+        return None  # new path or metadata unavailable — CAS disabled gracefully
 
 
 def write_if_absent(
@@ -125,16 +166,23 @@ def write_if_absent(
     Idempotent: reads current data at path first; if key already present skips write and returns
     False. Merges new key into existing data dict (read-modify-write) so other keys at path are
     preserved. Raises RuntimeError if hvac client unavailable. Re-raises vault write exceptions.
+
+    HIGH-02: Obtains the current KV v2 version via _get_cas_version() and passes it to
+    _vault_write as the ``cas`` parameter to prevent TOCTOU race conditions. Degrades
+    gracefully to non-CAS write when the version cannot be obtained (new path, vault
+    unavailable, or metadata read fails).
     """
     existing = _vault_read(manager, path) or {}
     if key in existing:
         _logger.debug(
-            "vault_io.write_if_absent: key %r already present at %r \u2014 skipping", key, path
+            "vault_io.write_if_absent: key %r already present at %r — skipping", key, path
         )
         return False
+    # HIGH-02: read version for CAS before writing
+    cas_version = _get_cas_version(manager, path)
     merged = {**existing, key: value}
-    _vault_write(manager, path, merged, custom_metadata=custom_metadata)
-    _logger.debug("vault_io.write_if_absent: wrote key %r to %r", key, path)
+    _vault_write(manager, path, merged, custom_metadata=custom_metadata, cas=cas_version)
+    _logger.debug("vault_io.write_if_absent: wrote key %r to %r (cas=%s)", key, path, cas_version)
     return True
 
 
@@ -143,6 +191,7 @@ def _vault_write(
     path: str,
     data: dict,
     custom_metadata: Optional[dict] = None,
+    cas: Optional[int] = None,
 ) -> None:
     """Write data to KV v2 path. Raises on failure so callers can atomically roll back.
 
@@ -156,11 +205,11 @@ def _vault_write(
             f"vault_io: hvac client not available — cannot write to vault path {path!r}"
         )
 
-    client.secrets.kv.v2.create_or_update_secret(
-        path=path,
-        secret=data,
-        mount_point=mount,
-    )
+    # HIGH-02: pass CAS version when provided to prevent TOCTOU overwrites
+    create_kwargs: dict = {"path": path, "secret": data, "mount_point": mount}
+    if cas is not None:
+        create_kwargs["cas"] = cas
+    client.secrets.kv.v2.create_or_update_secret(**create_kwargs)
     if custom_metadata:
         try:
             # KV v2 custom_metadata values must all be strings

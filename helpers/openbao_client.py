@@ -151,21 +151,33 @@ class OpenBaoClient:
             if self._config.auth_method == "approle":
                 try:
                     self._auth_approle()
-                except Exception as _approle_exc:  # REM-033 AC-05/AC-06: token fallback
-                    logger.warning(
-                        "AppRole auth failed (%s). Checking token fallback.",
-                        _approle_exc,
+                except Exception as _approle_exc:
+                    # HIGH-03: Do NOT silently downgrade to token auth.
+                    # Silent downgrade masks misconfiguration — an operator
+                    # who configured AppRole will not realise it failed and
+                    # that requests are authenticated with a different
+                    # method (or not authenticated at all).
+                    #
+                    # Dual-method fallback IS supported, but ONLY when the
+                    # caller explicitly sets allow_auth_fallback=True in
+                    # config — making the intent unambiguous in config.json.
+                    allow_fallback = getattr(
+                        self._config, "allow_auth_fallback", False
                     )
-                    if self._config.token:
+                    if allow_fallback and self._config.token:
                         logger.warning(
-                            "Falling back to token auth (vault_token is set). "
-                            "Set auth_method=token explicitly to suppress this warning."
+                            "AppRole auth failed (%s). "
+                            "allow_auth_fallback=true: falling back to token auth. "
+                            "Set auth_method=token explicitly for clean configuration.",
+                            _approle_exc,
                         )
                         self._auth_token()
                     else:
                         logger.error(
-                            "AppRole failed and no vault_token available. "
-                            "Plugin will operate in degraded mode."
+                            "AppRole auth failed (%s). "
+                            "Plugin will operate in degraded mode. "
+                            "Fix AppRole credentials or set auth_method=token.",
+                            _approle_exc,
                         )
                         self._client = None
                         return

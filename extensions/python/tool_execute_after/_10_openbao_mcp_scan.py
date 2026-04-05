@@ -307,14 +307,24 @@ async def _process_mcp_file(manager: Any, file_path: Path) -> None:
 
             # SHA-256 dedup: first 16 hex chars as index key
             value_hash = hashlib.sha256(header_value.encode("utf-8")).hexdigest()
-            hash_prefix = value_hash[:16]
+            hash_prefix = value_hash[:32]  # HIGH-01: was [:16] (64 bits -> 128 bits)
             dedup_path = f"_dedup/{hash_prefix}"
 
             canonical_path: Optional[str] = None
             try:
                 dedup_record = _vault_read(manager, dedup_path)
                 if dedup_record and isinstance(dedup_record, dict):
-                    canonical_path = dedup_record.get("canonical_path")
+                    # HIGH-01: CAS verify — confirm stored hash_prefix before reuse.
+                    # Backward-compat: if hash_prefix absent (legacy record), accept.
+                    stored_prefix = dedup_record.get("hash_prefix", "")
+                    if not stored_prefix or stored_prefix == hash_prefix:
+                        canonical_path = dedup_record.get("canonical_path")
+                    else:
+                        logger.warning(
+                            "Surface B: dedup hash_prefix mismatch at %r "
+                            "(stored=%.8s actual=%.8s) — new entry (HIGH-01)",
+                            dedup_path, stored_prefix, hash_prefix,
+                        )
             except Exception as exc:
                 logger.debug(
                     "Surface B scan: dedup lookup error server=%r header=%r: %s",
@@ -370,7 +380,7 @@ async def _process_mcp_file(manager: Any, file_path: Path) -> None:
             )
 
         for dedup_path, canonical_path in new_dedup:
-            _vault_write(manager, dedup_path, {"canonical_path": canonical_path})
+            _vault_write(manager, dedup_path, {"canonical_path": canonical_path, "hash_prefix": hash_prefix})  # HIGH-01
             logger.debug(
                 "Surface B scan: dedup index %r → %r", dedup_path, canonical_path
             )
