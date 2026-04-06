@@ -96,7 +96,7 @@ def manager_mod():
 
 @pytest.fixture(scope="module")
 def api_secrets_mod():
-    """Load api/secrets.py for sync testing."""
+    """Load api/sync_plugins.py for sync testing."""
     mock_api = MagicMock()
     mock_api.ApiHandler = type("ApiHandler", (), {})
     mock_api.Request = MagicMock
@@ -105,8 +105,8 @@ def api_secrets_mod():
     sys.modules.setdefault("helpers.plugins", MagicMock())
     sys.modules["deimos_openbao_secrets_helpers_vault_io"] = MagicMock()
 
-    path = os.path.join(os.path.dirname(__file__), "..", "api", "secrets.py")
-    spec = importlib.util.spec_from_file_location("api_secrets_adv", path)
+    path = os.path.join(os.path.dirname(__file__), "..", "api", "sync_plugins.py")
+    spec = importlib.util.spec_from_file_location("api_sync_plugins_adv", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

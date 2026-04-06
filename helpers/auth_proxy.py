@@ -58,6 +58,15 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Hop-by-hop headers (RFC 2616 §13.5.1) — strip before forwarding to client
+# ---------------------------------------------------------------------------
+
+HOP_BY_HOP: frozenset = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade",
+})
+
+# ---------------------------------------------------------------------------
 # Provider registry
 # ---------------------------------------------------------------------------
 

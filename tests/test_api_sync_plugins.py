@@ -21,7 +21,7 @@ import yaml
 
 @pytest.fixture(scope="module")
 def sync_mod():
-    """Load api/secrets.py with A0 runtime stubs pre-injected."""
+    """Load api/sync_plugins.py with A0 runtime stubs pre-injected."""
     mock_api = MagicMock()
 
     class _StubApiHandler:
@@ -39,7 +39,7 @@ def sync_mod():
     mock_cfg_mod = MagicMock()
     sys.modules.setdefault("deimos_openbao_secrets_helpers_config", mock_cfg_mod)
 
-    path = os.path.join(os.path.dirname(__file__), "..", "api", "secrets.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "api", "sync_plugins.py")
     spec = importlib.util.spec_from_file_location("api_secrets_sync", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

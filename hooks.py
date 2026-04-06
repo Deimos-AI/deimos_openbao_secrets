@@ -24,9 +24,10 @@ _REQUIREMENTS = _PLUGIN_DIR / "requirements.txt"
 # ---------------------------------------------------------------------------
 # API Routes (auto-discovered by Agent Zero from the api/ directory)
 # ---------------------------------------------------------------------------
-# POST /api/plugins/deimos_openbao_secrets/health       -> api/health.py
-# POST /api/plugins/deimos_openbao_secrets/secrets      -> api/secrets.py
-# POST /api/plugins/deimos_openbao_secrets/rotate_mcp   -> api/rotate_mcp.py
+# POST /api/plugins/deimos_openbao_secrets/health        -> api/health.py
+# POST /api/plugins/deimos_openbao_secrets/secrets     -> api/secrets.py
+# POST /api/plugins/deimos_openbao_secrets/rotate_mcp  -> api/rotate_mcp.py
+# POST /api/plugins/deimos_openbao_secrets/sync_plugins -> api/sync_plugins.py
 # ---------------------------------------------------------------------------
 
 
