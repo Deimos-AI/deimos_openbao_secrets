@@ -8,6 +8,7 @@ See Issue #3: https://192.168.200.52:3000/deimosAI/a0-plugin-openbao-secrets/iss
 from __future__ import annotations
 
 import logging
+import ssl
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple
@@ -42,6 +43,14 @@ PERMANENT_ERRORS = (
     hvac.exceptions.Forbidden,  # 403
     hvac.exceptions.InvalidPath,  # 404
     hvac.exceptions.InvalidRequest,  # 400
+    ssl.SSLError,  # Protocol mismatch / TLS errors — never retry
+)
+
+# Strings indicating HTTP/HTTPS protocol mismatch in error messages
+_PROTOCOL_MISMATCH_MARKERS = (
+    "client sent an http request to an https server",
+    "wrong version number",
+    "http request to https server",
 )
 
 
@@ -148,6 +157,26 @@ class OpenBaoClient:
                 headers['X-Vault-Namespace'] = self._config.vault_namespace
                 self._client.session.headers.update(headers)
 
+            # Layer 1: Protocol probe — detect HTTP/HTTPS mismatch before auth
+            try:
+                self._client.sys.read_health_status(method="GET")
+            except ssl.SSLError as exc:
+                logger.error(
+                    "Protocol mismatch: server expects HTTPS but config has %s — %s",
+                    self._config.url, exc,
+                )
+                self._client = None
+                return
+            except Exception as exc:
+                err_lower = str(exc).lower()
+                if any(m in err_lower for m in _PROTOCOL_MISMATCH_MARKERS):
+                    logger.error(
+                        "Protocol mismatch detected: %s (config URL: %s)",
+                        exc, self._config.url,
+                    )
+                    self._client = None
+                    return
+
             if self._config.auth_method == "approle":
                 try:
                     self._auth_approle()
@@ -189,6 +218,7 @@ class OpenBaoClient:
                 self._update_token_expiry()
             else:
                 logger.warning("Authentication failed for OpenBao at %s", self._config.url)
+                self._client = None  # Layer 3: prevent token renewal cascade
 
         except Exception as exc:
             logger.error("Failed to connect to OpenBao at %s: %s", self._config.url, exc)
@@ -385,6 +415,10 @@ class OpenBaoClient:
                     mount_point=mount,
                     raise_on_deleted_version=False,
                 )
+            except ssl.SSLError as exc:
+                # Layer 2: Protocol errors are permanent — prevent retry cascade
+                logger.error("Protocol error (permanent, not retrying): %s", exc)
+                raise RuntimeError(f"Protocol mismatch: {exc}") from exc
             except hvac.exceptions.Forbidden:
                 # Token may have been revoked — try re-auth once
                 logger.warning("403 Forbidden, attempting re-authentication")
