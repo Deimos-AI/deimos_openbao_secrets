@@ -2,11 +2,11 @@
 
 Endpoint: POST /api/plugins/deimos_openbao_secrets/sync_plugins
 
-Scans usr/plugins/*/plugin.yaml for 'secrets:' declarations.
-For each declared key:
-  exists   — key already in OpenBao (no write)
-  migrated — key absent in OpenBao + present in .env → written via write_if_absent
-  missing  — key absent in both (surfaced to user, no write)
+Behaviour:
+  If secrets registry exists (is_bootstrap_needed() == False):
+    Registry-mode: migrate discovered entries to OpenBao (AC-15, AC-16).
+  Else:
+    Legacy-mode: scan usr/plugins/*/plugin.yaml for 'secrets:' declarations.
 
 Gated by plugin_sync_enabled flag in default_config.yaml.
 """
@@ -97,6 +97,29 @@ def _load_vault_io():
     return sys.modules.get(_VAULT_IO_MODULE)
 
 
+# ---------------------------------------------------------------------------
+# registry loader (AC-15) — importlib.util pattern
+# ---------------------------------------------------------------------------
+_REGISTRY_MODULE = "deimos_openbao_secrets_helpers_registry"
+
+
+def _load_registry():
+    """Load helpers/registry.py via importlib.util, cached in sys.modules."""
+    if _REGISTRY_MODULE not in sys.modules:
+        from helpers.plugins import find_plugin_dir
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            return None
+        path = os.path.join(plugin_dir, "helpers", "registry.py")
+        if not os.path.exists(path):
+            return None
+        spec = importlib.util.spec_from_file_location(_REGISTRY_MODULE, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_REGISTRY_MODULE] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules.get(_REGISTRY_MODULE)
+
+
 class SyncPlugins(ApiHandler):
 
 
@@ -135,6 +158,14 @@ class SyncPlugins(ApiHandler):
 
         manager = vio._get_manager()
         secrets_path = getattr(cfg, "secrets_path", "agentzero")
+
+        # AC-15: registry-mode check — if registry exists, use registry-mode migration
+        reg_mod = _load_registry()
+        if reg_mod is not None:
+            rm = reg_mod.RegistryManager()
+            if not rm.is_bootstrap_needed():  # AC-15: registry present
+                return await self._process_registry_mode(rm, cfg, vio, manager, secrets_path)
+        # Fallback: legacy plugin.yaml scan (unchanged, backward compat)
 
         results = []
         for plugin_yaml_path in sorted(_USR_PLUGINS_DIR.glob("*/plugin.yaml")):
@@ -182,3 +213,67 @@ class SyncPlugins(ApiHandler):
             results.append(plugin_result)
 
         return {"ok": True, "plugins": results}  # AC-12
+
+    async def _process_registry_mode(self, rm, cfg, vio, manager, secrets_path: str) -> dict:
+        """Registry-mode: migrate all 'discovered' registry entries to OpenBao.
+
+        Satisfies: AC-15, AC-16
+        """
+        hard_fail = getattr(cfg, "hard_fail_on_unavailable", False)  # AC-16
+
+        discovered = rm.get_entries(status_filter="discovered")  # AC-15
+
+        result_pairs: list[tuple[str, str]] = []  # (entry_id, final_status)
+        response_entries: list[dict] = []
+
+        for entry in discovered:
+            vault_path = f"{secrets_path}/{_sanitize_path_component(entry.key)}"
+
+            # Check OpenBao
+            try:
+                existing = vio._vault_read(manager, vault_path) or {}
+            except Exception as exc:
+                # AC-16: OpenBao unavailable handling
+                if hard_fail:  # AC-16: raise immediately
+                    return {
+                        "ok": False,
+                        "error": "OpenBao unavailable and hard_fail_on_unavailable=True",
+                    }
+                logger.warning("sync_plugins registry-mode: vault read failed for %s: %s", entry.key, exc)
+                existing = {}
+
+            if entry.key in existing:
+                final_status = "exists"  # AC-15
+            else:
+                env_val = os.environ.get(entry.key, "")
+                if env_val:
+                    try:
+                        written = vio.write_if_absent(manager, vault_path, entry.key, env_val)
+                        final_status = "migrated" if written else "exists"  # AC-15
+                    except Exception as exc:
+                        if hard_fail:  # AC-16
+                            return {
+                                "ok": False,
+                                "error": "OpenBao unavailable and hard_fail_on_unavailable=True",
+                            }
+                        logger.warning("sync_plugins registry-mode: write_if_absent failed %s: %s", entry.key, exc)
+                        final_status = "missing"
+                else:
+                    final_status = "missing"  # AC-15: absent from both
+
+            # Collect update pairs — do NOT write registry mid-loop (AC-15)
+            if final_status in ("exists", "migrated"):
+                result_pairs.append((entry.id, final_status))
+
+            response_entries.append({
+                "key": entry.key,
+                "source": entry.source,
+                "context": entry.context,
+                "status": final_status,
+            })
+
+        # AC-15: bulk-save registry after full loop completes (no partial writes)
+        for entry_id, status in result_pairs:
+            rm.update_status(entry_id, status)
+
+        return {"ok": True, "mode": "registry", "entries": response_entries}  # AC-15

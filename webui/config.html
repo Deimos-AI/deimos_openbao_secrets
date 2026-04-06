@@ -292,6 +292,15 @@
                         <button class="btn btn-field" @click="toggleBulk()">Bulk Import</button>
                     </div>
 
+                    <!-- REM-017: Secrets Registry Bootstrap section (AC-14) -->
+                    <div class="mb-3 mt-2">
+                        <div class="fw-semibold mb-1">🗂 Secrets Registry</div>
+                        <div id="bootstrap-status" class="text-muted small mb-2">Checking registry…</div>
+                        <button id="btn-bootstrap-scan" class="btn btn-primary mt-2"
+                                onclick="runBootstrapScan()">🔍 Run Bootstrap Scan</button>
+                        <div id="bootstrap-result" class="mt-3" style="display:none;"></div>
+                    </div>
+
                     <button id="btn-sync-plugins" class="btn btn-secondary mt-2"
                             onclick="syncPlugins()">
                         🔍 Discover &amp; Sync Plugin Secrets
@@ -658,6 +667,128 @@ DB_PASSWORD=hunter2
                 btn.textContent = '🔍 Discover & Sync Plugin Secrets';
             }
         }
+        // REM-017: Secrets Registry Bootstrap functions (AC-14)
+        async function checkBootstrapStatus() {
+            const statusDiv = document.getElementById('bootstrap-status');
+            if (!statusDiv) return;
+            try {
+                const resp = await fetch('/api/plugins/deimos_openbao_secrets/bootstrap', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'status'  })
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    if (data.bootstrap_needed) {
+                        statusDiv.textContent = 'Registry absent — bootstrap scan needed';
+                        statusDiv.className = 'text-warning small mb-2';
+                    } else {
+                        statusDiv.textContent = `Registry present — ${data.entry_count} entries`;
+                        statusDiv.className = 'text-success small mb-2';
+                    }
+                } else {
+                    statusDiv.textContent = `Status error: ${data.error}`;
+                    statusDiv.className = 'text-danger small mb-2';
+                }
+            } catch (err) {
+                statusDiv.textContent = `Status check failed: ${err}`;
+                statusDiv.className = 'text-danger small mb-2';
+            }
+        }
+
+        async function runBootstrapScan() {
+            const btn = document.getElementById('btn-bootstrap-scan');
+            const resultDiv = document.getElementById('bootstrap-result');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scanning...';
+            resultDiv.style.display = 'none';
+
+            const SOURCES = {
+                env_scan:    {label: '.env Files',          icon: '📤'},
+                a0proj_scan: {label: '.a0proj Directories', icon: '📁'},
+                mcp_scan:    {label: 'MCP Settings',        icon: '🔌'}
+            };
+            const STATUS_ICON = {
+                discovered: '🔵',
+                migrated:   '🟡',
+                exists:     '🟢',
+                missing:    '🔴',
+                error:      '❌'
+            };
+
+            try {
+                const resp = await fetch('/api/plugins/deimos_openbao_secrets/bootstrap', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'scan'})
+                });
+                const data = await resp.json();
+
+                if (!data.ok) {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    resultDiv.style.display = 'block';
+                    return;
+                }
+
+                if (!data.entries || data.entries.length === 0) {
+                    resultDiv.innerHTML = '<div class="alert alert-info">No secrets discovered during scan.</div>';
+                    resultDiv.style.display = 'block';
+                    return;
+                }
+
+                // Group entries by source
+                const grouped = {};
+                data.entries.forEach(e => {
+                    if (!grouped[e.source]) grouped[e.source] = [];
+                    grouped[e.source].push(e);
+                });
+
+                // Build Bootstrap 5 accordion -- AC-14 (same CSS pattern as syncPlugins)
+                let html = '<div class="accordion" id="bootstrapAccordion">'
+                Object.entries(grouped).forEach(([src, items], idx) => {
+                    const collapseId = `bootstrapSrc${idx}`;
+                    const srcMeta = SOURCES[src] || {label: src, icon: '?'};
+                    const rows = items.map(e =>
+                        `<tr><td><code>${e.key}</code></td>` +
+                        `<td>${STATUS_ICON[e.status] || '?'} ${e.status}</td>` +
+                        `<td>${e.context}</td></tr>`
+                    ).join('');
+                    html += `
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button ${idx > 0 ? 'collapsed' : ''}'
+                                    type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#${collapseId}">
+                                ${srcMeta.icon} ${srcMeta.label}
+                                <span class="badge bg-secondary ms-2">${items.length}</span>
+                            </button>
+                        </h2>
+                        <div id="${collapseId}" class="accordion-collapse collapse ${idx === 0 ? 'show' : ''}">
+                            <div class="accordion-body">
+                                <table class="table table-sm">
+                                    <thead><tr><th>Key</th><th>Status</th><th>Context</th></tr></thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+                checkBootstrapStatus();
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Request failed: ${err}</div>`;
+                resultDiv.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Run Bootstrap Scan';
+            }
+        }
+
+        // AC-14: call on page load
+        checkBootstrapStatus();
+
     </script>
 </body>
 </html>

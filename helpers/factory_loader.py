@@ -19,8 +19,11 @@ where the plugin root is not on sys.path. The find_plugin_dir() approach resolve
 the plugin directory at runtime regardless of import environment.
 """
 import importlib.util
+import logging
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 _FC_MODULE_NAME = "openbao_secrets_factory_common"
 
@@ -59,4 +62,18 @@ def _get_openbao_manager():
     sys.modules[_FC_MODULE_NAME] = fc_mod  # cache before exec to handle circular imports
     spec.loader.exec_module(fc_mod)
 
-    return fc_mod.get_openbao_manager()
+    manager = fc_mod.get_openbao_manager()
+
+    # REM-017: first-install detection (AC-13)
+    # Entirely wrapped in try/except — registry check failure must never block plugin load.
+    try:
+        import helpers.registry as _reg_mod  # direct import — plugin root on sys.path
+        if _reg_mod.RegistryManager().is_bootstrap_needed():
+            logger.info(
+                "REM-017: secrets registry absent — run bootstrap scan via WebUI "
+                "or POST /api/plugins/deimos_openbao_secrets/bootstrap"
+            )
+    except Exception as _reg_exc:  # AC-13: never propagate
+        logger.debug("REM-017: registry check skipped: %s", _reg_exc)
+
+    return manager

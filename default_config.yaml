@@ -52,3 +52,12 @@ mcp_scan_paths:
 # Cross-plugin secret discovery — POST /api/openbao/sync-plugins
 # Set false to disable the sync endpoint entirely (useful in hardened prod environments)
 plugin_sync_enabled: true  # AC-02: plugin_sync_enabled flag
+
+# Path to the secrets registry YAML file (empty = auto-derive from project root)
+# Override via OPENBAO_REGISTRY_PATH environment variable
+# Satisfies: AC-10 (REM-017)
+registry_path: ""
+
+# Filesystem root for .env file scan during bootstrap (env_scan source)
+# Satisfies: AC-10 (REM-017)
+env_scan_root: "/a0"

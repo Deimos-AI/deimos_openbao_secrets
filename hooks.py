@@ -28,6 +28,7 @@ _REQUIREMENTS = _PLUGIN_DIR / "requirements.txt"
 # POST /api/plugins/deimos_openbao_secrets/secrets     -> api/secrets.py
 # POST /api/plugins/deimos_openbao_secrets/rotate_mcp  -> api/rotate_mcp.py
 # POST /api/plugins/deimos_openbao_secrets/sync_plugins -> api/sync_plugins.py
+# GET/POST /api/plugins/deimos_openbao_secrets/bootstrap -> api/bootstrap.py
 # ---------------------------------------------------------------------------
 
 
