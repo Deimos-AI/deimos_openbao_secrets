@@ -589,7 +589,7 @@ DB_PASSWORD=hunter2
             resultDiv.style.display = 'none';
 
             try {
-                const resp = await fetch('/api/plugins/deimos_openbao_secrets/sync-plugins', {
+                const resp = await fetch('/api/plugins/deimos_openbao_secrets/sync_plugins', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({})

@@ -99,7 +99,6 @@ def _load_vault_io():
 
 class SyncPlugins(ApiHandler):
 
-    requires_auth = True  # HIGH-05: SyncPlugins requires authentication
 
     """Cross-plugin secret discovery and .env → OpenBao migration endpoint."""
 

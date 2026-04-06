@@ -155,7 +155,6 @@ def _get_path(cfg, project_name: str = "") -> str:
 
 class SecretsManager(ApiHandler):
 
-    requires_auth = True  # HIGH-05: SecretsManager requires authentication
 
     @classmethod
     def requires_csrf(cls) -> bool:
