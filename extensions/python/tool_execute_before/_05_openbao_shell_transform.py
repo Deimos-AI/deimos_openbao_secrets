@@ -183,6 +183,19 @@ class OpenBaoShellTransform(Extension):
             # do not yet pass the tool= kwarg.
             if tool_name != "code_execution_tool":
                 return
+        # ── Runtime guard: only transform for terminal shells ────────────
+        # For python/nodejs runtimes the framework primitive (_10_unmask_secrets)
+        # replaces alias tokens with real values directly.  The plugin's masking
+        # layers (_10_openbao_mask_output, _10_openbao_mask_history) already
+        # catch real values before they reach any persistent artifact.
+        runtime = tool_args.get("runtime", "terminal").lower().strip()
+        if runtime not in ("terminal", ""):
+            logger.debug(
+                "OpenBaoShellTransform: skipping for runtime=%s "
+                "(framework primitive will handle alias resolution)",
+                runtime,
+            )
+            return
 
         # ── Guard: ⟦bao:⟧ placeholders MUST NOT reach the shell (ADR-04/R-08) ──
         # Runs BEFORE §§secret() expansion — fail-closed on unresolved placeholder.
