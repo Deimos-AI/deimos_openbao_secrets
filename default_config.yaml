@@ -53,6 +53,9 @@ mcp_scan_paths:
 # Set false to disable the sync endpoint entirely (useful in hardened prod environments)
 plugin_sync_enabled: true  # AC-02: plugin_sync_enabled flag
 
+# Propagate Placeholders -- replace plaintext secret values with $bao:KEY refs
+propagate_enabled: true
+
 # Path to the secrets registry YAML file (empty = auto-derive from project root)
 # Override via OPENBAO_REGISTRY_PATH environment variable
 # Satisfies: AC-10 (REM-017)
