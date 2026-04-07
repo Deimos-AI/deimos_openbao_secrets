@@ -164,7 +164,7 @@ class TestConnection(ApiHandler):
             auth_method = plugin_cfg.auth_method  # REM-003: attribute access on OpenBaoConfig (dict→dataclass)
 
             if auth_method == "token":
-                token = os.environ.get("OPENBAO_TOKEN", "")
+                token = plugin_cfg.token or os.environ.get("OPENBAO_TOKEN", "")
                 if not token:
                     return {
                         "ok": False,
@@ -174,8 +174,8 @@ class TestConnection(ApiHandler):
                 client.token = token
 
             elif auth_method == "approle":
-                role_id = os.environ.get("OPENBAO_ROLE_ID", "")
-                secret_id = os.environ.get("OPENBAO_SECRET_ID", "")
+                role_id = plugin_cfg.role_id or os.environ.get("OPENBAO_ROLE_ID", "")
+                secret_id = plugin_cfg.secret_id or os.environ.get("OPENBAO_SECRET_ID", "")
                 if not role_id:
                     return {
                         "ok": False,
