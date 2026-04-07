@@ -156,7 +156,9 @@ class SyncPlugins(ApiHandler):
         if vio is None:
             return {"ok": False, "error": "vault_io not available"}
 
-        manager = vio._get_manager()
+        manager = vio._ensure_manager()
+        if manager is None:
+            return {"ok": False, "error": "OpenBao manager could not be initialized. The plugin factory may be locked out from a boot-time failure. Try restarting Agent Zero or check logs for initialization errors."}
         secrets_path = getattr(cfg, "secrets_path", "agentzero")
 
         # AC-15: registry-mode check — if registry exists, use registry-mode migration

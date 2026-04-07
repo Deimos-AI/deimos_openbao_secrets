@@ -162,13 +162,19 @@ class TestConnection(ApiHandler):
             # Step 2: Auth using ONLY the configured method
             plugin_cfg = load_config(str(_PLUGIN_DIR))  # REM-003: canonical config loader
             auth_method = plugin_cfg.auth_method  # REM-003: attribute access on OpenBaoConfig (dict→dataclass)
+            logger.info("TestConnection: auth_method=%s, url=%s", auth_method, url)
 
             if auth_method == "token":
                 token = plugin_cfg.token or os.environ.get("OPENBAO_TOKEN", "")
                 if not token:
+                    # Check if approle credentials exist but auth_method wasn't set
+                    has_role_id = bool(plugin_cfg.role_id or os.environ.get("OPENBAO_ROLE_ID"))
+                    hint = ""
+                    if has_role_id:
+                        hint = " (OPENBAO_ROLE_ID is set — did you mean to set OPENBAO_AUTH_METHOD=approle?)"
                     return {
                         "ok": False,
-                        "error": "No token found. Set OPENBAO_TOKEN env var or configure token in plugin settings.",
+                        "error": f"No token found. Set OPENBAO_TOKEN env var or configure token in plugin settings.{hint}",
                         "data": {**health_info, "authenticated": False, "auth_method": "token"}
                     }
                 client.token = token

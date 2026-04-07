@@ -197,6 +197,13 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
             except (ValueError, TypeError) as exc:
                 logger.warning("Invalid value for env %s: %s", env_var, exc)
 
+    # Auto-detect approle: if auth_method is still default 'token' but OPENBAO_ROLE_ID is present,
+    # switch to approle automatically (common on new deployments with Docker env vars)
+    if config.auth_method == "token" and not config.token:
+        if os.environ.get("OPENBAO_ROLE_ID") or config.role_id:
+            config.auth_method = "approle"
+            logger.info("Auto-detected approle auth method from OPENBAO_ROLE_ID presence")
+
     # Bootstrap token file takes precedence over inline vault_token
     token_file = getattr(config, 'vault_token_file', '') or ''
     if token_file:

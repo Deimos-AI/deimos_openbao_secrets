@@ -72,6 +72,34 @@ def _get_manager() -> Optional[Any]:
         _logger.debug("vault_io: get_openbao_manager() failed: %s", exc)
         return None
 
+def _ensure_manager() -> Optional[Any]:
+    """Get manager with factory reset+retry for API handler use.
+
+    Unlike _get_manager() which silently returns None when factory is locked out,
+    this function attempts to reset factory_common and retry initialization.
+    Use this in API handlers that run on-demand (not during boot) where conditions
+    may have changed since the initial transient failure.
+
+    Returns OpenBaoSecretsManager or None.
+    """
+    manager = _get_manager()
+    if manager is not None:
+        return manager
+
+    # Factory may be locked out from boot-time transient failure
+    # Attempt reset and retry since API handlers run on-demand
+    try:
+        fc = sys.modules.get("openbao_secrets_factory_common")
+        if fc is not None:
+            _logger.info("vault_io: factory locked out, attempting reset+retry for API handler")
+            fc.reset()
+            return _get_manager()
+    except Exception as exc:
+        _logger.warning("vault_io: factory reset+retry failed: %s", exc)
+
+    return None
+
+
 
 def _get_hvac(manager: Any) -> tuple[Optional[Any], Optional[str]]:
     """Return (hvac_client, mount_point) from manager, or (None, None).
