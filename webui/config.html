@@ -308,7 +308,7 @@
                     <div id="sync-plugins-result" class="mt-3" style="display:none;"></div>
 
 
-                    <div x-show="error" style="color:#ff6b6b; margin:8px 0; font-weight:bold;" x-text="error"></div>
+                    <!-- REM-022 (AC-03): errors shown via toastFrontendError, not inline -->
                     <div x-show="loading" style="color:#888; margin:8px 0;">Loading secrets...</div>
 
                     <!-- Add New -->
@@ -436,6 +436,12 @@ DB_PASSWORD=hunter2
             _editing: {},
             _editValues: {},
 
+            // REM-022 (AC-03): showError — toast-based error display
+            showError: function(msg) {
+                this.error = msg;
+                if (window.toastFrontendError) window.toastFrontendError(msg, 'OpenBao Secrets');
+            },
+
             isEditing: function(key) {
                 return !!this._editing[key];
             },
@@ -471,11 +477,11 @@ DB_PASSWORD=hunter2
                 .then(function(r) { return r.json(); })
                 .then(function(d) {
                     if (d.ok) self.secrets = d.secrets || [];
-                    else self.error = d.error || 'Failed to list secrets';
+                    else self.showError(d.error || 'Failed to list secrets');
                     self.loading = false;
                 })
                 .catch(function(e) {
-                    self.error = e.message;
+                    self.showError(e.message);
                     self.loading = false;
                 });
             },
@@ -508,10 +514,10 @@ DB_PASSWORD=hunter2
                         self.cancelEdit(key);
                         self.doRefresh();
                     } else {
-                        self.error = d.error;
+                        self.showError(d.error);
                     }
                 })
-                .catch(function(e) { self.error = e.message; });
+                .catch(function(e) { self.showError(e.message); });
             },
 
             confirmDelete: function(key) {
@@ -527,9 +533,9 @@ DB_PASSWORD=hunter2
                 .then(function(r) { return r.json(); })
                 .then(function(d) {
                     if (d.ok) self.doRefresh();
-                    else self.error = d.error;
+                    else self.showError(d.error);
                 })
-                .catch(function(e) { self.error = e.message; });
+                .catch(function(e) { self.showError(e.message); });
             },
 
             showBulk: false,
@@ -560,10 +566,10 @@ DB_PASSWORD=hunter2
                         self.bulkText = ''; self.showBulk = false;
                         self.doRefresh();
                     } else {
-                        self.error = d.error;
+                        self.showError(d.error);
                     }
                 })
-                .catch(function(e) { self.error = e.message; });
+                .catch(function(e) { self.showError(e.message); });
             },
 
             addNew: function() {
@@ -582,10 +588,10 @@ DB_PASSWORD=hunter2
                         self.newKey = ''; self.newValue = ''; self.showAdd = false;
                         self.doRefresh();
                     } else {
-                        self.error = d.error;
+                        self.showError(d.error);
                     }
                 })
-                .catch(function(e) { self.error = e.message; });
+                .catch(function(e) { self.showError(e.message); });
             }
         };
     };
@@ -606,9 +612,9 @@ DB_PASSWORD=hunter2
                 const data = await resp.json();
 
                 if (!data.ok) {
-                    resultDiv.innerHTML =
-                        `<div class="alert alert-danger">${data.error}</div>`;
-                    resultDiv.style.display = 'block';
+                    // REM-022 (AC-03): toast instead of inline error
+                    if (window.toastFrontendError) window.toastFrontendError(data.error, 'Plugin Sync');
+                    resultDiv.innerHTML = '';
                     return;
                 }
 
@@ -659,9 +665,9 @@ DB_PASSWORD=hunter2
                 resultDiv.innerHTML = html;
                 resultDiv.style.display = 'block';
             } catch (err) {
-                resultDiv.innerHTML =
-                    `<div class="alert alert-danger">Request failed: ${err}</div>`;
-                resultDiv.style.display = 'block';
+                // REM-022 (AC-03): toast instead of inline error
+                if (window.toastFrontendError) window.toastFrontendError('Request failed: ' + err, 'Plugin Sync');
+                resultDiv.innerHTML = '';
             } finally {
                 btn.disabled = false;
                 btn.textContent = '🔍 Discover & Sync Plugin Secrets';
@@ -725,8 +731,9 @@ DB_PASSWORD=hunter2
                 const data = await resp.json();
 
                 if (!data.ok) {
-                    resultDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
-                    resultDiv.style.display = 'block';
+                    // REM-022 (AC-03): toast instead of inline error
+                    if (window.toastFrontendError) window.toastFrontendError(data.error, 'Bootstrap Scan');
+                    resultDiv.innerHTML = '';
                     return;
                 }
 
@@ -778,8 +785,9 @@ DB_PASSWORD=hunter2
                 resultDiv.style.display = 'block';
                 checkBootstrapStatus();
             } catch (err) {
-                resultDiv.innerHTML = `<div class="alert alert-danger">Request failed: ${err}</div>`;
-                resultDiv.style.display = 'block';
+                // REM-022 (AC-03): toast instead of inline error
+                if (window.toastFrontendError) window.toastFrontendError('Request failed: ' + err, 'Bootstrap Scan');
+                resultDiv.innerHTML = '';
             } finally {
                 btn.disabled = false;
                 btn.textContent = '🔍 Run Bootstrap Scan';
