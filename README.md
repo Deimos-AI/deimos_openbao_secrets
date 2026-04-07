@@ -31,6 +31,7 @@ Replaces Agent Zero's default `.env`-based secrets management with [OpenBao](htt
 - [Project Structure](#project-structure)
 - [Development](#development)
 - [Upgrading](#upgrading)
+- [Known Issues & Architectural Limitations](#known-issues--architectural-limitations)
 - [OpenBao Target](#openbao-target)
 - [License](#license)
 
@@ -986,6 +987,68 @@ New installations (settings saved after REM-032) are not affected — the modal 
 correct snake_case keys automatically.
 
 ---
+
+
+---
+
+## Known Issues & Architectural Limitations
+
+These are documented quirks and limitations — known at v0.1.0 and acknowledged as part of the architecture.
+
+### SSRF Protection Blocks Localhost (F-07)
+
+**What:** `api/health.py` blocks connections to `localhost` and `127.0.0.1` as part of the SSRF
+protection guard. The health endpoint will reject any URL that resolves to a loopback address.
+
+**Why:** Intentional production security posture — allowing arbitrary server-side HTTP requests
+to loopback addresses is a classic SSRF vector.
+
+**Impact:** Developers running OpenBao on the same host as Agent Zero cannot test vault
+connectivity via the health endpoint using `http://localhost:8200` or `http://127.0.0.1:8200`.
+
+**Workaround:**
+- Use the Docker host gateway IP (e.g. `http://172.17.0.1:8200`) instead of `localhost`
+- Use a custom DNS entry or hostname that resolves to a non-loopback address
+- Test vault connectivity directly with `bao status` or `curl` from within the container
+
+---
+
+### Circuit Breaker Scope (F-08)
+
+**What:** The circuit breaker is scoped to each `OpenBaoClient` instance, not shared globally
+across requests. Failure counts do not accumulate across separate invocations.
+
+**Why:** Architectural limitation — a global circuit breaker would require shared state across
+async contexts, introducing its own complexity and race conditions.
+
+**Impact:** The circuit breaker does not protect against cascading failures in the way a
+global breaker would. If the vault is unavailable, each request independently probes it
+rather than fast-failing based on accumulated failure state from prior requests.
+
+**Planned improvement:** A future release may introduce a process-level singleton or shared
+circuit breaker state via `asyncio`-safe globals.
+
+---
+
+### Transient Init Failures Require Restart (F-09)
+
+**What:** The `_init_attempted` flag in `openbao_client.py` is set to `True` for permanent
+failure cases (missing dependencies, invalid configuration). For transient network errors,
+the init is intentionally NOT marked permanent, allowing retries.
+
+**Failure scenario:** If a transient network error is misclassified as a permanent failure
+during the first connection attempt, the `_init_attempted` flag is set and subsequent requests
+fail immediately without attempting reconnection.
+
+**Symptoms:** All secrets operations fail after the first transient error, with log messages
+like `"OpenBao initialization already attempted — skipping"`.
+
+**Recovery:** Restart Agent Zero to reset the `_init_attempted` state.
+
+**Mitigation:** Ensure OpenBao is reachable and healthy before enabling the plugin. Set
+`hard_fail_on_unavailable: false` in `config.json` to allow graceful fallback to `.env` files
+when OpenBao is unavailable — this prevents a single transient error from disabling all
+secret resolution.
 
 ## Issue Tracker
 
