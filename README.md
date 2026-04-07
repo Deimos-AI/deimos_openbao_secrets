@@ -33,15 +33,12 @@ Replaces Agent Zero's default `.env`-based secrets management with [OpenBao](htt
 ```bash
 # 1. Clone into plugins directory
 cd /path/to/agent-zero
-mkdir -p usr/plugins
-git clone https://github.com/Deimos-AI/deimos_openbao_secrets.git usr/plugins/deimos_openbao_secrets
+cd usr/plugins
+git clone https://github.com/Deimos-AI/deimos_openbao_secrets.git
 
 # 2. Install dependencies
 cd usr/plugins/deimos_openbao_secrets
 pip install -r requirements.txt
-
-# 3. Configure
-cp config.json.example config.json
 ```
 
 Edit `config.json` with your OpenBao server details:
