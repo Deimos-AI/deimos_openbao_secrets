@@ -195,6 +195,8 @@ def test_approle_auth_success(health_mod):
     mock_cfg.auth_method = "approle"
     mock_cfg.role_id = ""  # REM-024: empty → uses env OPENBAO_ROLE_ID
     mock_cfg.secret_id = ""  # REM-024: empty → uses env OPENBAO_SECRET_ID
+    mock_cfg.secret_id_env = "OPENBAO_SECRET_ID"  # REM-025: named env var for secret_id
+    mock_cfg.secret_id_file = ""  # REM-025: no file-based secret_id
 
     with patch.object(health_mod, "_ensure_hvac", return_value=True), \
          patch.object(health_mod, "load_config", return_value=mock_cfg), \
@@ -228,6 +230,9 @@ def test_approle_login_failure_returns_error(health_mod):
     mock_cfg = MagicMock()
     mock_cfg.auth_method = "approle"
     mock_cfg.role_id = ""  # REM-024: empty → uses env OPENBAO_ROLE_ID
+    mock_cfg.secret_id = ""
+    mock_cfg.secret_id_env = "OPENBAO_SECRET_ID"  # REM-025
+    mock_cfg.secret_id_file = ""  # REM-025
 
     with patch.object(health_mod, "_ensure_hvac", return_value=True), \
          patch.object(health_mod, "load_config", return_value=mock_cfg), \
@@ -298,6 +303,8 @@ def test_approle_auth_uses_plugin_cfg_credentials(health_mod):
     mock_cfg.auth_method = "approle"
     mock_cfg.role_id = "cfg-role-id"
     mock_cfg.secret_id = "cfg-secret-id"
+    mock_cfg.secret_id_env = "OPENBAO_SECRET_ID"  # REM-025
+    mock_cfg.secret_id_file = ""  # REM-025
 
     with patch.object(health_mod, "_ensure_hvac", return_value=True), \
          patch.object(health_mod, "load_config", return_value=mock_cfg), \
@@ -343,5 +350,113 @@ def test_env_fallback_when_plugin_cfg_fields_empty(health_mod):
 
     assert result["ok"] is True
     assert result["data"]["authenticated"] is True
-    # Verify the client token was set to the env fallback value
     assert mock_client.token == "s.env-fallback-token"
+
+
+# ---------------------------------------------------------------------------
+# REM-025: secret_id_env / secret_id_file resolution
+# ---------------------------------------------------------------------------
+
+def test_approle_uses_custom_secret_id_env(health_mod):
+    """REM-025: secret_id resolved from custom env var name (secret_id_env).
+
+    When plugin_cfg.secret_id is empty and secret_id_env='CUSTOM_SECRET_VAR',
+    health.py must read secret_id from os.environ['CUSTOM_SECRET_VAR'].
+    """
+    handler = health_mod.TestConnection()
+    mock_hvac = MagicMock()
+    mock_client = mock_hvac.Client.return_value
+    mock_client.sys.read_health_status.return_value = {
+        "initialized": True, "sealed": False, "version": "2.0.0"
+    }
+    mock_client.auth.approle.login.return_value = {"auth": {"client_token": "s.custom-env"}}
+    mock_client.is_authenticated.return_value = True
+    mock_cfg = MagicMock()
+    mock_cfg.auth_method = "approle"
+    mock_cfg.role_id = "role-from-cfg"
+    mock_cfg.secret_id = ""
+    mock_cfg.secret_id_env = "MY_CUSTOM_SECRET"
+    mock_cfg.secret_id_file = ""
+
+    with patch.object(health_mod, "_ensure_hvac", return_value=True), \
+         patch.object(health_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}), \
+         patch.dict(os.environ, {"MY_CUSTOM_SECRET": "custom-secret-value"}):
+        result = asyncio.run(handler.process(
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
+        ))
+
+    assert result["ok"] is True
+    assert result["data"]["authenticated"] is True
+    mock_client.auth.approle.login.assert_called_once_with(
+        role_id="role-from-cfg", secret_id="custom-secret-value"
+    )
+
+
+def test_approle_uses_secret_id_file(health_mod, tmp_path):
+    """REM-025: secret_id resolved from file path (secret_id_file).
+
+    When plugin_cfg.secret_id is empty and secret_id_env is not in os.environ,
+    health.py must read secret_id from the file at secret_id_file.
+    """
+    secret_file = tmp_path / "secret_id.txt"
+    secret_file.write_text("file-based-secret-id")
+
+    handler = health_mod.TestConnection()
+    mock_hvac = MagicMock()
+    mock_client = mock_hvac.Client.return_value
+    mock_client.sys.read_health_status.return_value = {
+        "initialized": True, "sealed": False, "version": "2.0.0"
+    }
+    mock_client.auth.approle.login.return_value = {"auth": {"client_token": "s.file-secret"}}
+    mock_client.is_authenticated.return_value = True
+    mock_cfg = MagicMock()
+    mock_cfg.auth_method = "approle"
+    mock_cfg.role_id = "role-from-cfg"
+    mock_cfg.secret_id = ""
+    mock_cfg.secret_id_env = "MISSING_ENV_VAR"
+    mock_cfg.secret_id_file = str(secret_file)
+
+    with patch.object(health_mod, "_ensure_hvac", return_value=True), \
+         patch.object(health_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}), \
+         patch.dict(os.environ, {}, clear=True):
+        result = asyncio.run(handler.process(
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
+        ))
+
+    assert result["ok"] is True
+    assert result["data"]["authenticated"] is True
+    mock_client.auth.approle.login.assert_called_once_with(
+        role_id="role-from-cfg", secret_id="file-based-secret-id"
+    )
+
+
+def test_approle_role_id_error_message_diagnostic(health_mod):
+    """REM-025: improved error message mentions both config and env sources."""
+    handler = health_mod.TestConnection()
+    mock_hvac = MagicMock()
+    mock_client = mock_hvac.Client.return_value
+    mock_client.sys.read_health_status.return_value = {
+        "initialized": True, "sealed": False, "version": "2.0.0"
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.auth_method = "approle"
+    mock_cfg.role_id = ""
+    mock_cfg.secret_id = ""
+    mock_cfg.secret_id_env = "OPENBAO_SECRET_ID"
+    mock_cfg.secret_id_file = ""
+
+    with patch.object(health_mod, "_ensure_hvac", return_value=True), \
+         patch.object(health_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}), \
+         patch.dict(os.environ, {}, clear=True):
+        result = asyncio.run(handler.process(
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
+        ))
+
+    assert result["ok"] is False
+    # REM-025: error message now mentions both config and env sources
+    assert "config.json" in result["error"]
+    assert "OPENBAO_ROLE_ID" in result["error"]
+    assert "Agent Zero container" in result["error"]

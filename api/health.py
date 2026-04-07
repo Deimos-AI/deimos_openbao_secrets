@@ -168,18 +168,37 @@ class TestConnection(ApiHandler):
                 if not token:
                     return {
                         "ok": False,
-                        "error": "OPENBAO_TOKEN not set in Docker environment",
+                        "error": "No token found. Set OPENBAO_TOKEN env var or configure token in plugin settings.",
                         "data": {**health_info, "authenticated": False, "auth_method": "token"}
                     }
                 client.token = token
 
             elif auth_method == "approle":
+                # REM-025: Align credential resolution with openbao_client.py::_resolve_approle_credentials()
+                # role_id: plugin config > OPENBAO_ROLE_ID env var
                 role_id = plugin_cfg.role_id or os.environ.get("OPENBAO_ROLE_ID", "")
-                secret_id = plugin_cfg.secret_id or os.environ.get("OPENBAO_SECRET_ID", "")
+
+                # secret_id: plugin config > named env var (secret_id_env) > secret_id_file > OPENBAO_SECRET_ID fallback
+                secret_id = plugin_cfg.secret_id or ""
+                if not secret_id:
+                    secret_id_env_name = getattr(plugin_cfg, 'secret_id_env', None) or 'OPENBAO_SECRET_ID'
+                    secret_id = os.environ.get(secret_id_env_name, "")
+                if not secret_id:
+                    secret_id_file = getattr(plugin_cfg, 'secret_id_file', '') or ''
+                    if secret_id_file:
+                        try:
+                            secret_id = Path(secret_id_file).read_text().strip()
+                        except (OSError, IOError):
+                            pass  # fall through to error below
+
                 if not role_id:
                     return {
                         "ok": False,
-                        "error": "OPENBAO_ROLE_ID not set in Docker environment",
+                        "error": (
+                            "No role_id found. Checked: plugin config.json, env var OPENBAO_ROLE_ID. "
+                            "Ensure OPENBAO_ROLE_ID is set in the Agent Zero container's environment "
+                            "(not the OpenBao container's .env)."
+                        ),
                         "data": {**health_info, "authenticated": False, "auth_method": "approle"}
                     }
                 try:
