@@ -75,5 +75,8 @@ def _get_openbao_manager():
             )
     except Exception as _reg_exc:  # AC-13: never propagate
         logger.debug("REM-017: registry check skipped: %s", _reg_exc)
-
     return manager
+
+
+# AC-03 (REM-020): Public alias — used by all extension files via dynamic loading.
+get_openbao_manager = _get_openbao_manager
