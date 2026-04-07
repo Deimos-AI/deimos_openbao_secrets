@@ -78,10 +78,14 @@ def _ensure_hvac() -> bool:
 
 
 def _get_client():
-    """Create an authenticated hvac client from config + env vars."""
+    """Create an authenticated hvac client from plugin config.
+
+    Credential source: OpenBaoConfig (env-var fallback handled by config.py).
+    Direct os.environ access is intentionally avoided — see F-02 remediation (REM-021).
+    """
     import hvac
 
-    cfg = load_config(str(_PLUGIN_DIR))  # REM-003: canonical config loader replaces _load_config()
+    cfg = load_config(str(_PLUGIN_DIR))  # REM-003: canonical config loader
 
     url = cfg.url  # REM-003: attribute access on OpenBaoConfig
     if not url:
@@ -93,21 +97,21 @@ def _get_client():
 
     verify = tls_ca_cert if tls_ca_cert else tls_verify
     client = hvac.Client(url=url, verify=verify, timeout=timeout)
-
-    # Auth from env vars
-    token = os.environ.get("OPENBAO_TOKEN", "")
+    # REM-021 (AC-02, AC-03): credentials from config, not os.environ.
+    # config.py handles env-var fallback, vault_token_file, etc.
+    token = getattr(cfg, "token", "") or ""
     if token:
         client.token = token
     else:
-        role_id = os.environ.get("OPENBAO_ROLE_ID", "")
-        secret_id = os.environ.get("OPENBAO_SECRET_ID", "")
+        role_id = getattr(cfg, "role_id", "") or ""
+        secret_id = getattr(cfg, "secret_id", "") or ""
         if role_id:
             result = client.auth.approle.login(role_id=role_id, secret_id=secret_id)
             client.token = result["auth"]["client_token"]
         else:
             raise RuntimeError(
-                "No credentials found. Set OPENBAO_TOKEN or OPENBAO_ROLE_ID/OPENBAO_SECRET_ID "
-                "as Docker environment variables."
+                "No credentials found. Configure vault_token or role_id/secret_id "
+                "in plugin settings or environment variables (OPENBAO_TOKEN, OPENBAO_ROLE_ID)."
             )
 
     if not client.is_authenticated():

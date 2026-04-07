@@ -58,8 +58,10 @@ def secrets_mod():
 # ---------------------------------------------------------------------------
 
 def test_get_client_no_credentials_raises(secrets_mod):
-    """AC-05: _get_client with no env credentials raises RuntimeError.
+    """AC-05: _get_client with no credentials raises RuntimeError.
 
+    REM-021: credentials come from config, not os.environ.
+    Empty cfg.token + cfg.role_id → RuntimeError.
     Satisfies: AC-05 (_get_client no_credentials)
     """
     mock_hvac = MagicMock()
@@ -69,17 +71,20 @@ def test_get_client_no_credentials_raises(secrets_mod):
     mock_cfg.tls_verify = True
     mock_cfg.tls_ca_cert = ""
     mock_cfg.timeout = 10
+    mock_cfg.token = ""       # REM-021: config-based, not os.environ
+    mock_cfg.role_id = ""     # REM-021
+    mock_cfg.secret_id = ""   # REM-021
 
     with patch.object(secrets_mod, "load_config", return_value=mock_cfg), \
-         patch.dict(sys.modules, {"hvac": mock_hvac}), \
-         patch.dict(os.environ, {}, clear=True):  # no OPENBAO_TOKEN or ROLE_ID
+         patch.dict(sys.modules, {"hvac": mock_hvac}):
         with pytest.raises(RuntimeError):          # AC-05: no_credentials
             secrets_mod._get_client()
 
 
 def test_get_client_token_auth_succeeds(secrets_mod):
-    """AC-05: _get_client with OPENBAO_TOKEN returns (client, cfg).
+    """AC-05: _get_client with cfg.token returns (client, cfg).
 
+    REM-021: token comes from config, not os.environ.
     Satisfies: AC-05 (_get_client token_auth_succeeds)
     """
     mock_hvac = MagicMock()
@@ -90,14 +95,59 @@ def test_get_client_token_auth_succeeds(secrets_mod):
     mock_cfg.tls_verify = True
     mock_cfg.tls_ca_cert = ""
     mock_cfg.timeout = 10
+    mock_cfg.token = "s.test-token"  # REM-021: config-based credential
 
     with patch.object(secrets_mod, "load_config", return_value=mock_cfg), \
-         patch.dict(sys.modules, {"hvac": mock_hvac}), \
-         patch.dict(os.environ, {"OPENBAO_TOKEN": "s.test-token"}):
+         patch.dict(sys.modules, {"hvac": mock_hvac}):
         client, cfg = secrets_mod._get_client()  # AC-05: token_auth_succeeds
 
     assert client is mock_client  # AC-05
     assert cfg is mock_cfg        # AC-05
+
+
+def test_get_client_approle_auth_succeeds(secrets_mod):
+    """REM-021: _get_client with cfg.role_id/secret_id uses approle login.
+
+    Satisfies: AC-02, AC-03 (credentials from config, same path as openbao_client)
+    """
+    mock_hvac = MagicMock()
+    mock_client = mock_hvac.Client.return_value
+    mock_client.is_authenticated.return_value = True
+    mock_client.auth.approle.login.return_value = {
+        "auth": {"client_token": "s.approle-token"}
+    }
+    mock_cfg = MagicMock()
+    mock_cfg.url = "http://localhost:8200"
+    mock_cfg.tls_verify = True
+    mock_cfg.tls_ca_cert = ""
+    mock_cfg.timeout = 10
+    mock_cfg.token = ""                # no token → fallback to approle
+    mock_cfg.role_id = "role-abc"      # REM-021: config-based
+    mock_cfg.secret_id = "secret-xyz"  # REM-021: config-based
+
+    with patch.object(secrets_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}):
+        client, cfg = secrets_mod._get_client()
+
+    mock_client.auth.approle.login.assert_called_once_with(
+        role_id="role-abc", secret_id="secret-xyz"
+    )
+    assert client.token == "s.approle-token"
+    assert client is mock_client
+    assert cfg is mock_cfg
+
+
+def test_get_client_no_os_environ_access(secrets_mod):
+    """REM-021 (AC-01): _get_client never reads OPENBAO_TOKEN from os.environ."""
+    import inspect
+    source = inspect.getsource(secrets_mod._get_client)
+    # AC-01: no direct os.environ.get for credential env vars
+    assert 'os.environ.get("OPENBAO_TOKEN")' not in source
+    assert 'os.environ.get("OPENBAO_ROLE_ID")' not in source
+    assert 'os.environ.get("OPENBAO_SECRET_ID")' not in source
+    assert "os.environ.get('OPENBAO_TOKEN')" not in source
+    assert "os.environ.get('OPENBAO_ROLE_ID')" not in source
+    assert "os.environ.get('OPENBAO_SECRET_ID')" not in source
 
 
 # ---------------------------------------------------------------------------
