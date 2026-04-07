@@ -49,6 +49,8 @@ _FIELD_TO_ENV: Dict[str, str] = {
     "hard_fail_on_unavailable": "HARD_FAIL_ON_UNAVAILABLE",
     "vault_namespace": "VAULT_NAMESPACE",
     "vault_token_file": "VAULT_TOKEN_FILE",
+    "secret_id_env": "SECRET_ID_ENV",
+    "secret_id_file": "SECRET_ID_FILE",
 }
 
 # Fields with boolean type

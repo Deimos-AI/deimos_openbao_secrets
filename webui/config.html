@@ -1,6 +1,33 @@
 <html>
 <head>
     <title>Deimos OpenBao Secrets</title>
+    <style>
+        /* Accent variants layered on btn-field (dark glass base) */
+        .btn-field.btn-action {
+            border-color: rgba(100, 180, 255, 0.25) !important;
+            box-shadow: inset 0 0 6px rgba(100, 180, 255, 0.08);
+        }
+        .btn-field.btn-action:hover {
+            border-color: rgba(100, 180, 255, 0.45) !important;
+            box-shadow: inset 0 0 10px rgba(100, 180, 255, 0.15);
+        }
+        .btn-field.btn-confirm {
+            border-color: rgba(76, 175, 80, 0.2) !important;
+            box-shadow: inset 0 0 6px rgba(76, 175, 80, 0.06);
+        }
+        .btn-field.btn-confirm:hover {
+            border-color: rgba(76, 175, 80, 0.45) !important;
+            box-shadow: inset 0 0 10px rgba(76, 175, 80, 0.15);
+        }
+        .btn-field.btn-undo {
+            border-color: rgba(255, 193, 7, 0.2) !important;
+            box-shadow: inset 0 0 6px rgba(255, 193, 7, 0.06);
+        }
+        .btn-field.btn-undo:hover {
+            border-color: rgba(255, 193, 7, 0.45) !important;
+            box-shadow: inset 0 0 10px rgba(255, 193, 7, 0.15);
+        }
+    </style>
 </head>
 <body>
     <div x-data>
@@ -292,60 +319,6 @@
                         <button class="btn btn-field" @click="toggleBulk()">Bulk Import</button>
                     </div>
 
-                    <!-- REM-017: Secrets Registry Bootstrap section (AC-14) -->
-                    <div class="mb-3 mt-2">
-                        <div class="fw-semibold mb-1">🗂 Secrets Registry</div>
-                        <div id="bootstrap-status" class="text-muted small mb-2">Checking registry…</div>
-                        <button id="btn-bootstrap-scan" class="btn btn-primary mt-2"
-                                onclick="runBootstrapScan()">🔍 Run Bootstrap Scan</button>
-                        <div id="bootstrap-result" class="mt-3" style="display:none;"></div>
-                    </div>
-
-                    <button id="btn-sync-plugins" class="btn btn-secondary mt-2"
-                            onclick="syncPlugins()">
-                        🔍 Discover &amp; Sync Plugin Secrets
-                    </button>
-                    <div id="sync-plugins-result" class="mt-3" style="display:none;"></div>
-
-                    <!-- E-03: Propagate Placeholders section (AC-27) -->
-                    <div class="mb-3 mt-3" style="border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">
-                        <div class="fw-semibold mb-1">🔄 Propagate Placeholders</div>
-                        <div class="text-muted small mb-2">
-                            Replace plaintext secret values with <code>$bao:KEY</code> references.
-                            Creates automatic backups. Undo available.
-                        </div>
-
-                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                            <button id="btn-propagate-scan" class="btn btn-primary mt-1"
-                                    onclick="propagateScan()">🔍 Scan Targets</button>
-                            <button id="btn-propagate-execute" class="btn btn-secondary mt-1"
-                                    style="display:none;" onclick="propagateExecute()">✅ Propagate Selected</button>
-                            <select id="propagate-undo-select" class="mt-1" style="display:none; max-width:200px;">
-                                <option value="">-- Select backup --</option>
-                            </select>
-                            <button id="btn-propagate-undo" class="btn btn-secondary mt-1"
-                                    style="display:none;" onclick="propagateUndo()">↩ Undo</button>
-                            <span id="propagate-spinner" style="display:none; color:#888; margin-left:8px;">⏳ Working...</span>
-                        </div>
-
-                        <!-- Target table (AC-27, AC-28) -->
-                        <div id="propagate-targets" class="mt-3" style="display:none;">
-                            <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
-                                <thead>
-                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
-                                        <th style="text-align:left; padding:4px 8px;"><input type="checkbox" id="propagate-select-all" checked onchange="propagateToggleAll(this)" /></th>
-                                        <th style="text-align:left; padding:4px 8px;">File</th>
-                                        <th style="text-align:left; padding:4px 8px;">Field</th>
-                                        <th style="text-align:left; padding:4px 8px;">Preview</th>
-                                        <th style="text-align:left; padding:4px 8px;">Proposed</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="propagate-targets-body"></tbody>
-                            </table>
-                        </div>
-
-                        <div id="propagate-result" class="mt-3" style="display:none;"></div>
-                    </div>
 
 
                     <!-- REM-022 (AC-03): errors shown via toastFrontendError, not inline -->
@@ -455,6 +428,84 @@ DB_PASSWORD=hunter2
                                 <span x-show="mcpRefreshing">Refreshing&hellip;</span>
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Discovery & Migration Tools (collapsible) -->
+                <div x-data="{ toolsExpanded: false }">
+                    <div style="cursor:pointer; display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid rgba(255,255,255,0.1); margin-top:24px;"
+                         @click="toolsExpanded = !toolsExpanded">
+                        <span class="material-symbols-outlined"
+                              :style="toolsExpanded ? 'transform:rotate(90deg)' : ''"
+                              style="font-size:18px; transition:transform 0.15s ease;">chevron_right</span>
+                        <span class="field-title" style="font-size:0.95rem;">Discovery &amp; Migration Tools</span>
+                        <span style="opacity:0.4; font-size:0.8rem; margin-left:4px;">(click to expand)</span>
+                    </div>
+                    <div x-show="toolsExpanded" x-transition.opacity>
+
+                        <!-- REM-017: Secrets Registry Bootstrap section (AC-14) -->
+                        <div class="field">
+                            <div class="field-label">
+                                <div class="field-title">🗂 Secrets Registry</div>
+                                <div class="field-description">Scan environment files, .a0proj directories, and MCP settings for declared secrets. Bootstraps the registry on first install. <span id="bootstrap-status">Checking registry…</span></div>
+                            </div>
+                            <div class="field-control">
+                                <button id="btn-bootstrap-scan" class="btn btn-field btn-action"
+                                        onclick="runBootstrapScan()">🔍 Run Bootstrap Scan</button>
+                            </div>
+                        </div>
+                        <div id="bootstrap-result" class="mt-3" style="display:none;"></div>
+
+                        <!-- Discover & Sync Plugin Secrets -->
+                        <div class="field">
+                            <div class="field-label">
+                                <div class="field-title">🔌 Plugin Secret Sync</div>
+                                <div class="field-description">Scan installed plugins for declared secrets and sync them to OpenBao.</div>
+                            </div>
+                            <div class="field-control">
+                                <button id="btn-sync-plugins" class="btn btn-field btn-action"
+                                        onclick="syncPlugins()">🔍 Discover &amp; Sync Plugin Secrets</button>
+                            </div>
+                        </div>
+                        <div id="sync-plugins-result" class="mt-3" style="display:none;"></div>
+
+                        <!-- E-03: Propagate Placeholders section (AC-27) -->
+                        <div class="field">
+                            <div class="field-label">
+                                <div class="field-title">🔄 Propagate Placeholders</div>
+                                <div class="field-description">Replace plaintext secret values with <code>$bao:KEY</code> references. Creates automatic backups. Undo available.</div>
+                            </div>
+                            <div class="field-control" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                <button id="btn-propagate-scan" class="btn btn-field btn-action"
+                                        onclick="propagateScan()">🔍 Scan Targets</button>
+                                <button id="btn-propagate-execute" class="btn btn-field btn-confirm"
+                                        style="display:none;" onclick="propagateExecute()">✅ Propagate Selected</button>
+                                <select id="propagate-undo-select" style="display:none; max-width:200px;">
+                                    <option value="">-- Select backup --</option>
+                                </select>
+                                <button id="btn-propagate-undo" class="btn btn-field btn-undo"
+                                        style="display:none;" onclick="propagateUndo()">↩ Undo</button>
+                                <span id="propagate-spinner" style="display:none; color:#888; margin-left:8px;">⏳ Working...</span>
+                            </div>
+                        </div>
+
+                        <!-- Target table (AC-27, AC-28) -->
+                        <div id="propagate-targets" class="mt-3" style="display:none;">
+                            <table style="width:100%; border-collapse:collapse; font-size:0.85em;">
+                                <thead>
+                                    <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
+                                        <th style="text-align:left; padding:4px 8px;"><input type="checkbox" id="propagate-select-all" checked onchange="propagateToggleAll(this)" /></th>
+                                        <th style="text-align:left; padding:4px 8px;">File</th>
+                                        <th style="text-align:left; padding:4px 8px;">Field</th>
+                                        <th style="text-align:left; padding:4px 8px;">Preview</th>
+                                        <th style="text-align:left; padding:4px 8px;">Proposed</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="propagate-targets-body"></tbody>
+                            </table>
+                        </div>
+
+                        <div id="propagate-result" class="mt-3" style="display:none;"></div>
                     </div>
                 </div>
             </div>
