@@ -61,3 +61,18 @@ registry_path: ""
 # Filesystem root for .env file scan during bootstrap (env_scan source)
 # Satisfies: AC-10 (REM-017)
 env_scan_root: "/a0"
+
+# Keys to inject into os.environ before code_execution_tool runs.
+# Agents can then reference these as os.environ["KEY"] (python),
+# process.env.KEY (nodejs), or $KEY (terminal).
+# Add any secret name from the OpenBao secrets_path here.
+terminal_secrets:
+  - API_KEY_ZAI_CODING
+  - API_KEY_OPENAI
+  - API_KEY_OPENROUTER
+  - OPENROUTER_API_KEY
+  - API_KEY_A0_VENICE
+  - API_KEY_STRAICO
+  - GH_TOKEN
+  - GITEA_TOKEN
+  - OPENPROJECT_API_KEY
