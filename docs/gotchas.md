@@ -44,7 +44,7 @@
 
 18. **Dynamic importlib loader fragility.** `factory_common.py` loads modules via `importlib.util.spec_from_file_location`. On hot-plugin-update, old module instances in `sys.modules` shadow new code silently. Restart the agent after plugin updates.
 
-19. **`_init_attempted` is only set for permanent failures, not transient ones.** Permanent failures include: missing dependencies, plugin not installed, explicitly disabled, and config validation errors. Transient network errors during init do **not** set this flag, allowing automatic retry on subsequent requests. However, if a transient error is misclassified, the flag may be set incorrectly — in that case, restart Agent Zero to reset state. Set `hard_fail_on_unavailable: false` to allow graceful fallback.
+19. **`_init_attempted` is only set for permanent failures, not transient ones.** Permanent failures include: missing dependencies, plugin not installed, and explicitly disabled. Transient failures (config validation errors, module loading issues, network errors) are retried up to `OPENBAO_FACTORY_MAX_RETRIES` (default 3) with exponential backoff before locking out. After exhausting retries, the factory locks out permanently — call `reset()` or restart to retry. Set `hard_fail_on_unavailable: false` to allow graceful fallback. (F-09 — resolved in v0.9.0-beta.)
 
 20. **Test mock format diverges from production.** `conftest.py` uses `"secret_alias(KEY)"` for masked values, while production uses the real placeholder format. Masking bugs producing subtly wrong formats would pass tests but fail in production.
 
@@ -81,14 +81,16 @@ These are documented quirks and limitations — known at v0.1.0 and acknowledged
 
 ---
 
-### Transient Init Failures May Require Restart (F-09)
+### ✅ Transient Init Failures — Fixed (F-09)
 
-**What:** The `_init_attempted` flag in `factory_common.py` is set to `True` **only for permanent failure cases** (missing dependencies, plugin not installed, explicitly disabled, invalid config). Transient network errors during initialization do **not** set this flag — the init can be retried on subsequent requests.
+**Status:** Resolved in v0.9.0-beta.
 
-**Failure scenario:** If a transient network error is misclassified as a permanent failure during the first connection attempt, `_init_attempted` is set and subsequent requests fail immediately without attempting reconnection. This is an edge case, not the common path.
+**What was wrong:** `factory_common.py` used `_init_attempted=True` for all failure types including transient ones (config validation errors, module loading failures, network errors). This meant a single transient failure during boot permanently disabled the OpenBao factory for the entire process lifetime.
 
-**Symptoms:** All secrets operations fail after the first transient error, with log messages like `"OpenBao initialization already attempted — skipping"`.
+**Root cause:** Config validation errors (e.g., env vars not yet propagated) were classified as permanent failures, setting `_init_attempted=True` and preventing any retry.
 
-**Recovery:** Restart Agent Zero to reset the `_init_attempted` state.
+**Fix:** The factory now classifies failures as PERMANENT or TRANSIENT:
+- **Permanent** (immediate lockout): deps missing, plugin not found, plugin explicitly disabled.
+- **Transient** (retryable): config validation errors, module loading failures, network errors, `ImportError`, general `Exception`.
 
-**Mitigation:** Ensure OpenBao is reachable and healthy before enabling the plugin. Set `hard_fail_on_unavailable: false` in `config.json` to allow graceful fallback to `.env` files when OpenBao is unavailable.
+Transient failures are retried up to `OPENBAO_FACTORY_MAX_RETRIES` (default 3) with exponential backoff (`OPENBAO_FACTORY_RETRY_BACKOFF`, default 1.0s base). After exhausting retries, the factory locks out permanently. Call `reset()` or restart to retry.
