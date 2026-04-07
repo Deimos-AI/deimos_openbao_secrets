@@ -6,11 +6,13 @@ Replaces Agent Zero's default `.env`-based secrets management with [OpenBao](htt
 
 **v0.1.0 — Replace Mode** (in development)
 
-> **Dependency:** Requires upstream PRs merged into `agent0ai/agent-zero:development`:
-> - [#1377](https://github.com/agent0ai/agent-zero/pull/1377) — `extra_env` + `tool` in `tool_execute` extensions
-> - [#1379](https://github.com/agent0ai/agent-zero/pull/1379) — sidebar extension points
-> - [#1394](https://github.com/agent0ai/agent-zero/pull/1394) — PR-A `hook_context`
-> - [#1395](https://github.com/agent0ai/agent-zero/pull/1395) — PR-B+C `@extensible` on `set_settings` + `resolve_mcp_server_headers`
+> **Upstream dependencies** — required PRs for `agent0ai/agent-zero:development`:
+> - [#1377](https://github.com/agent0ai/agent-zero/pull/1377) — `extra_env` + `tool` in `tool_execute` extensions *(pending merge)*
+> - [#1394](https://github.com/agent0ai/agent-zero/pull/1394) — `hook_context` in plugin config hooks *(pending merge)*
+>
+> **Already merged:**
+> - ~~[#1379](https://github.com/agent0ai/agent-zero/pull/1379)~~ — sidebar extension points *(merged — commit `d357c24d`)*
+> - ~~[#1395](https://github.com/agent0ai/agent-zero/pull/1395)~~ — `@extensible` on `set_settings` + `resolve_mcp_server_headers` *(merged — commit `d1196324`)*
 
 ---
 
