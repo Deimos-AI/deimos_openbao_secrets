@@ -41,7 +41,7 @@ No running OpenBao instance is required for tests. All vault interactions are mo
 
 ## CI Pipeline
 
-The `.gitea/workflows/plugin-lint.yml` workflow runs on push:
+The `.github/workflows/plugin-lint.yml` workflow runs on push:
 
 - Lint: syntax validation
 - Secret surface scan: `ci_secret_surface_scan.py` detects raw secret exposure

@@ -47,7 +47,7 @@ lf_key = resolve_secret("LANGFUSE_PUBLIC_KEY", project_slug="my-project")
 |---|---|
 | LLM API call (OpenAI, Anthropic, OpenRouter) | `§§secret()` alias |
 | `git push` / `git clone` over HTTPS | `resolve_secret("GH_TOKEN")` |
-| GitHub / Gitea REST API call | `resolve_secret("GH_TOKEN")` |
+| GitHub REST API call | `resolve_secret("GH_TOKEN")` |
 | Any direct HTTP call with auth header | `resolve_secret("MY_KEY")` |
 | Shell command via `code_execution_tool` | `resolve_secret("MY_KEY")` |
 

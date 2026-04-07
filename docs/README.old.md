@@ -148,7 +148,7 @@ graph TD
 ```bash
 cd /path/to/agent-zero
 mkdir -p usr/plugins
-git clone http://your-gitea/deimosAI/deimos_openbao_secrets.git usr/plugins/deimos_openbao_secrets
+git clone https://github.com/Deimos-AI/deimos_openbao_secrets.git usr/plugins/deimos_openbao_secrets
 ```
 
 **2. Install Python dependencies:**
@@ -599,7 +599,7 @@ lf_key = resolve_secret("LANGFUSE_PUBLIC_KEY", project_slug="my-project")
 |---|---|
 | LLM API call (OpenAI, Anthropic, OpenRouter) | `§§secret()` alias |
 | `git push` / `git clone` over HTTPS | `resolve_secret("GH_TOKEN")` |
-| GitHub / Gitea REST API call | `resolve_secret("GH_TOKEN")` |
+| GitHub REST API call | `resolve_secret("GH_TOKEN")` |
 | Any direct HTTP call with auth header | `resolve_secret("MY_KEY")` |
 | Shell command via `code_execution_tool` | `resolve_secret("MY_KEY")` |
 
@@ -913,7 +913,7 @@ No running OpenBao instance is required for tests. All vault interactions are mo
 
 ### CI Pipeline
 
-The `.gitea/workflows/plugin-lint.yml` workflow runs on push:
+The `.github/workflows/plugin-lint.yml` workflow runs on push:
 
 - Lint: syntax validation
 - Secret surface scan: `ci_secret_surface_scan.py` detects raw secret exposure
@@ -1054,7 +1054,7 @@ secret resolution.
 
 ## Issue Tracker
 
-See [Gitea milestone v0.1.0](http://192.168.200.52:3000/deimosAI/a0-plugin-openbao-secrets/milestone/17) for all planned work.
+See [GitHub issues](https://github.com/Deimos-AI/deimos_openbao_secrets/issues) for planned work.
 
 ## License
 
