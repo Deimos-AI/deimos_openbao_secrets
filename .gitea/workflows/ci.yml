@@ -1,0 +1,72 @@
+# CI pipeline for deimos_openbao_secrets plugin.
+#
+# Reusable workflows sourced from deimosAI/ci-templates@main.
+# Plugin-specific lint/test coverage lives in plugin-lint.yml (unchanged).
+#
+# Required secrets (org or repo level):
+#   ANTHROPIC_AUTH_TOKEN  — Anthropic API key for Claude PR review
+#   TOKEN_GITEA           — Gitea access token
+#   SNYK_TOKEN            — Snyk security scanning token
+#
+# Required variables (org or repo level):
+#   ANTHROPIC_BASE_URL             — Anthropic API base URL
+#   ANTHROPIC_DEFAULT_SONNET_MODEL — Claude model name
+#   API_TIMEOUT_MS                 — API timeout in ms
+#   TOKEN_GITEA_USER               — Gitea username matching TOKEN_GITEA
+#
+# See: http://192.168.200.52:3000/deimosAI/ci-templates
+
+name: CI
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+
+  # ── PR-only: AI code review ───────────────────────────────────────────────
+  # Runs claude-review against every PR diff; posts findings as PR comment.
+  # Skips documentation-only changes (no code files changed).
+  review:
+    if: github.event_name == 'pull_request'
+    uses: deimosAI/ci-templates/.gitea/workflows/claude-review.yml@main
+    secrets: inherit
+
+  # ── PR-only: markdown lint ────────────────────────────────────────────────
+  # Validates README.md and any other *.md files against org-wide markdownlint
+  # config (markdownlint/base.yml from ci-templates). Override by placing a
+  # .markdownlint.yml in the repo root.
+  lint-markdown:
+    if: github.event_name == 'pull_request'
+    uses: deimosAI/ci-templates/.gitea/workflows/lint-markdown.yml@main
+    secrets: inherit
+
+  # ── Push + PR: gitleaks secret scan ──────────────────────────────────────
+  # Critical for this plugin — it handles OpenBao tokens, API keys, and
+  # AppRole credentials. Scans against org-wide gitleaks/base.toml config
+  # (override via repo-root .gitleaks.toml).
+  secret-scan:
+    uses: deimosAI/ci-templates/.gitea/workflows/secret-scan.yml@main
+    secrets: inherit
+
+  # ── Push + PR: Snyk vulnerability scan ───────────────────────────────────
+  # Scans Python dependencies declared in requirements.txt (hvac, tenacity,
+  # circuitbreaker, pyyaml, etc.) for known CVEs.
+  snyk-scan:
+    uses: deimosAI/ci-templates/.gitea/workflows/snyk-scan.yml@main
+    secrets: inherit
+
+  # ── Post-merge: bump submodule pointer in parent repo ────────────────────
+  # After every merge to main, opens a PR on deimosAI/deimos-openbao-project
+  # to advance the deimos_openbao_secrets submodule pointer to the new HEAD.
+  # Safe to leave enabled: exits cleanly if the submodule is not registered
+  # in .gitmodules, and deduplicates open bump PRs automatically.
+  bump-parent:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: deimosAI/ci-templates/.gitea/workflows/bump-submodule.yml@main
+    with:
+      submodule_path: deimos_openbao_secrets
+      target_repo: deimosAI/deimos-openbao-project
+    secrets: inherit
