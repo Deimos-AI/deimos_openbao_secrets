@@ -130,6 +130,20 @@
                                    placeholder="or set OPENBAO_ROLE_ID env var" />
                         </div>
                     </div>
+                    <!-- E-04: Secret ID status — display-only, credential value never shown -->
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Secret ID <span data-env-field="secret_id"></span></div>
+                            <div class="field-description">
+                                Sensitive credential — never entered here.
+                                Set via <code>OPENBAO_SECRET_ID</code> env var, <code>secret_id_env</code> name, or <code>secret_id_file</code> path.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" disabled placeholder="(set via env var or file)"
+                                   style="opacity:0.45; cursor:not-allowed;" />
+                        </div>
+                    </div>
                     <div class="field">
                         <div class="field-label">
                             <div class="field-title">Secret ID Env Var Name</div>
@@ -1156,6 +1170,18 @@ function _applyEnvBadges(overrides) {
             el.classList.add('env-locked');
             el.insertAdjacentElement('afterend', badge);
         }
+    });
+
+    // E-04: credential fields with no x-model input (e.g. secret_id — never entered in UI)
+    // Use [data-env-field] anchor spans injected into field titles.
+    document.querySelectorAll('[data-env-field]').forEach(function(anchor) {
+        var field = anchor.getAttribute('data-env-field');
+        if (!overrides.has(field)) return;
+        var badge = document.createElement('span');
+        badge.className = 'env-badge';
+        badge.textContent = 'ENV';
+        badge.title = 'OPENBAO_' + field.toUpperCase() + ' is set — credential active.';
+        anchor.appendChild(badge);
     });
 }
 
