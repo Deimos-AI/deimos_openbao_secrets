@@ -33,7 +33,6 @@
             background: rgba(100, 180, 255, 0.15);
             border: 1px solid rgba(100, 180, 255, 0.30);
             border-radius: 3px;
-            padding: 1px 6px;
             color: rgba(100, 180, 255, 0.85);
             margin-left: 6px;
             vertical-align: middle;
@@ -57,7 +56,7 @@
 <body>
     <div x-data>
         <template x-if="config">
-            <div>
+            <div x-init="_initEnvOverrides()">
                 <div class="section-title">
                     <a href="https://deimosai.com/agentic-organisation" target="_blank"
                        style="text-decoration:none; margin-right:6px;" title="Deimos Agentic Organisation">
@@ -1160,9 +1159,6 @@ function _applyEnvBadges(overrides) {
     });
 }
 
-// Fire after Alpine.js has initialized all x-data components.
-// 'alpine:initialized' is the Alpine v3 event that fires after startup completes.
-document.addEventListener('alpine:initialized', _initEnvOverrides);
 </script>
 </body>
 </html>
