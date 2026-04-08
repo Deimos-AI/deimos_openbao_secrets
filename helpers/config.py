@@ -156,9 +156,14 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
         plugin_dir: Path to the plugin directory containing settings.json.
 
     Returns:
-        Populated OpenBaoConfig instance.
+        Populated OpenBaoConfig instance. The instance carries a dynamic
+        ``_sources`` attribute (``dict[str, str]``) mapping each explicitly
+        loaded field name to its source: ``"env"`` (OPENBAO_* env var) or
+        ``"settings"`` (settings.json). Fields at dataclass defaults are
+        absent from ``_sources``.
     """
     config = OpenBaoConfig()
+    _sources: dict = {}  # E-04: tracks field origin — "env" | "settings"
     valid_fields = {f.name for f in fields(config)}
 
     # Layer 1: Load from settings.json (lower priority)
@@ -177,6 +182,7 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
                     try:
                         parsed = _parse_value(key, raw_value)
                         setattr(config, key, parsed)
+                        _sources[key] = "settings"
                         _safe_log_field(key, parsed, "settings.json")
                     except (ValueError, TypeError) as exc:
                         logger.warning("Invalid value for %s in settings.json: %s", key, exc)
@@ -193,6 +199,7 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
             try:
                 parsed = _parse_value(field_name, raw_value)
                 setattr(config, field_name, parsed)
+                _sources[field_name] = "env"
                 _safe_log_field(field_name, parsed, f"env:{env_var}")
             except (ValueError, TypeError) as exc:
                 logger.warning("Invalid value for env %s: %s", env_var, exc)
@@ -225,6 +232,10 @@ def load_config(plugin_dir: str = ".") -> OpenBaoConfig:
         else:
             logger.warning("vault_token_file path not found: %s — using inline vault_token", token_file)
 
+    # E-04: Attach source-tracking dict as dynamic attribute.
+    # Auto-detect block (lines 200-205) and token-file block (207-227) are post-processors
+    # that do NOT update _sources — they change config values, not source provenance.
+    config._sources = _sources
     return config
 
 

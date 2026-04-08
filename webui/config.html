@@ -27,6 +27,31 @@
             border-color: rgba(255, 193, 7, 0.45) !important;
             box-shadow: inset 0 0 10px rgba(255, 193, 7, 0.15);
         }
+        /* E-04: env-var source indicator badge */
+        .env-badge {
+            font-size: 0.7em;
+            background: rgba(100, 180, 255, 0.15);
+            border: 1px solid rgba(100, 180, 255, 0.30);
+            border-radius: 3px;
+            padding: 1px 6px;
+            color: rgba(100, 180, 255, 0.85);
+            margin-left: 6px;
+            vertical-align: middle;
+            cursor: default;
+            user-select: none;
+            white-space: nowrap;
+            display: inline-block;
+        }
+        .env-locked {
+            opacity: 0.55 !important;
+            cursor: not-allowed !important;
+            pointer-events: none;
+        }
+        input[type="checkbox"].env-locked + .toggler {
+            opacity: 0.45 !important;
+            cursor: not-allowed !important;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -1076,5 +1101,68 @@ DB_PASSWORD=hunter2
 
 
     </script>
+<script>
+// E-04: ENV-override source indicators
+async function _initEnvOverrides() {
+    try {
+        const resp = await fetch(
+            '/api/plugins/deimos_openbao_secrets/config_meta',
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }
+        );
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.ok) return;
+        window._envOverrides = new Set(data.env_overrides || []);
+        _applyEnvBadges(window._envOverrides);
+    } catch (_e) {
+        // Non-fatal: graceful degradation.
+        // Badge failure must NEVER break or freeze the config UI.
+    }
+}
+
+function _applyEnvBadges(overrides) {
+    document.querySelectorAll('[x-model^="config."]').forEach(function(el) {
+        var field = el.getAttribute('x-model').replace('config.', '');
+        if (!overrides.has(field)) return;
+
+        var badge = document.createElement('span');
+        badge.className = 'env-badge';
+        badge.textContent = 'ENV';
+        badge.title = 'This value is set by a Docker/OS environment variable. ' +
+                      'Edit the OPENBAO_' + field.toUpperCase() + ' env var to change it.';
+
+        if (el.type === 'checkbox') {
+            // Toggle field: disable the checkbox + insert badge in field-description
+            el.disabled = true;
+            el.classList.add('env-locked');
+            var fieldDiv = el.closest('.field');
+            if (fieldDiv) {
+                var target = fieldDiv.querySelector('.field-description') ||
+                             fieldDiv.querySelector('.field-title');
+                if (target) target.appendChild(badge);
+            }
+        } else if (el.tagName === 'SELECT') {
+            // Select element: disable (readOnly not supported on select) + badge after
+            el.disabled = true;
+            el.classList.add('env-locked');
+            el.insertAdjacentElement('afterend', badge);
+        } else {
+            // text / number / password: readonly + badge immediately after input
+            el.readOnly = true;
+            el.classList.add('env-locked');
+            el.insertAdjacentElement('afterend', badge);
+        }
+    });
+}
+
+// Fire after Alpine.js has initialized all x-data components.
+// 'alpine:initialized' is the Alpine v3 event that fires after startup completes.
+document.addEventListener('alpine:initialized', _initEnvOverrides);
+</script>
 </body>
 </html>
