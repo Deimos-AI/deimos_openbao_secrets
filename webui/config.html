@@ -133,7 +133,7 @@
                     <!-- E-04: Secret ID status — display-only, credential value never shown -->
                     <div class="field">
                         <div class="field-label">
-                            <div class="field-title">Secret ID <span data-env-field="secret_id"></span></div>
+                            <div class="field-title">Secret ID</div>
                             <div class="field-description">
                                 Sensitive credential — never entered here.
                                 Set via <code>OPENBAO_SECRET_ID</code> env var, <code>secret_id_env</code> name, or <code>secret_id_file</code> path.
@@ -141,7 +141,7 @@
                         </div>
                         <div class="field-control">
                             <input type="text" disabled placeholder="(set via env var or file)"
-                                   style="opacity:0.45; cursor:not-allowed;" />
+                                   style="opacity:0.45; cursor:not-allowed;" /><span data-env-field="secret_id"></span>
                         </div>
                     </div>
                     <div class="field">
