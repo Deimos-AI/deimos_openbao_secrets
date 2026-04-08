@@ -260,8 +260,7 @@ def get_plugin_config(result=None, **kwargs):
         _cfg_dict = _asdict(_cfg)
         for _field, _src in _sources.items():
             if _src == "env" and _field not in _CRED:
-                _compound = _KEY_REVERSE.get(_field, _field)
-                merged[_compound] = _cfg_dict.get(_field, merged.get(_compound))
+                merged[_field] = _cfg_dict.get(_field, merged.get(_field))
     except Exception:
         pass  # Non-fatal: display degradation only — never break config load
 
