@@ -238,4 +238,31 @@ def get_plugin_config(result=None, **kwargs):
     else:
         merged = defaults
 
+    # E-04: Apply env var overrides so displayed values + Test Connection reflect
+    # actual env state. Without this, Alpine config shows defaults/config.json
+    # values even when OPENBAO_* env vars are active (e.g. url=127.0.0.1:8200
+    # instead of the real OPENBAO_URL). Credential values are never included.
+    try:
+        import importlib.util as _ilu
+        import sys as _sys
+        from dataclasses import asdict as _asdict
+        _mod_name = "_deimos_openbao_secrets_config_hook"
+        _spec = _ilu.spec_from_file_location(_mod_name, _PLUGIN_DIR / "helpers" / "config.py")
+        _mod = _ilu.module_from_spec(_spec)
+        _sys.modules[_mod_name] = _mod
+        try:
+            _spec.loader.exec_module(_mod)
+        finally:
+            _sys.modules.pop(_mod_name, None)
+        _cfg = _mod.load_config(str(_PLUGIN_DIR))
+        _sources = getattr(_cfg, "_sources", {})
+        _CRED = frozenset({"role_id", "secret_id", "token"})
+        _cfg_dict = _asdict(_cfg)
+        for _field, _src in _sources.items():
+            if _src == "env" and _field not in _CRED:
+                _compound = _KEY_REVERSE.get(_field, _field)
+                merged[_compound] = _cfg_dict.get(_field, merged.get(_compound))
+    except Exception:
+        pass  # Non-fatal: display degradation only — never break config load
+
     return merged
