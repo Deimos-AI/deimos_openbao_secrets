@@ -381,7 +381,10 @@ def test_approle_uses_custom_secret_id_env(health_mod):
     with patch.object(health_mod, "_ensure_hvac", return_value=True), \
          patch.object(health_mod, "load_config", return_value=mock_cfg), \
          patch.dict(sys.modules, {"hvac": mock_hvac}), \
-         patch.dict(os.environ, {"MY_CUSTOM_SECRET": "custom-secret-value"}):
+         patch.dict(os.environ, {
+             "OPENBAO_ROLE_ID": "role-from-cfg",  # REM-026: pin OPENBAO_ROLE_ID so env-first is deterministic
+             "MY_CUSTOM_SECRET": "custom-secret-value",
+         }):
         result = asyncio.run(handler.process(
             {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
         ))
@@ -459,4 +462,67 @@ def test_approle_role_id_error_message_diagnostic(health_mod):
     # REM-025: error message now mentions both config and env sources
     assert "config.json" in result["error"]
     assert "OPENBAO_ROLE_ID" in result["error"]
-    assert "Agent Zero container" in result["error"]
+    assert "Agent Zero container" in result["error"]  # REM-025: message clarifies which container
+
+
+# ---------------------------------------------------------------------------
+# REM-026: env-first credential resolution — env takes precedence over stale config
+# ---------------------------------------------------------------------------
+
+def test_approle_env_creds_win_over_stale_config(health_mod):
+    """REM-026: OPENBAO_ROLE_ID/OPENBAO_SECRET_ID env vars beat stale config.json values.
+
+    Regression scenario: config.json was written with credentials that have
+    since rotated. The container's env vars carry the fresh credentials.
+    Before REM-026, health.py was config-first (plugin_cfg.role_id first,
+    then env) while openbao_client.py was always env-first. This caused
+    'Test Connection' to fail with stale credentials while secrets display
+    (via openbao_client.py) worked — a confusing split-brain state.
+
+    openbao_client.py::_resolve_approle_credentials():
+        role_id   = os.environ.get('OPENBAO_ROLE_ID') or config.role_id  ← env-first
+        secret_id = os.environ.get(secret_id_env_name)                   ← NEVER reads config.secret_id
+
+    After REM-026, health.py mirrors this exactly.
+
+    Satisfies: REM-026 acceptance criteria AC-1 (root cause), AC-2 (fix applied),
+               AC-3 (regression test)
+    """
+    handler = health_mod.TestConnection()
+    mock_hvac = MagicMock()
+    mock_client = mock_hvac.Client.return_value
+    mock_client.sys.read_health_status.return_value = {
+        "initialized": True, "sealed": False, "version": "2.0.0"
+    }
+    mock_client.auth.approle.login.return_value = {"auth": {"client_token": "s.env-wins"}}
+    mock_client.is_authenticated.return_value = True
+
+    mock_cfg = MagicMock()
+    mock_cfg.auth_method = "approle"
+    mock_cfg.role_id = "STALE-role-id-from-config-json"       # stale — must NOT be used
+    mock_cfg.secret_id = "STALE-secret-id-from-config-json"   # stale — must NOT be used
+    mock_cfg.secret_id_env = "OPENBAO_SECRET_ID"              # default env var name
+    mock_cfg.secret_id_file = ""                              # no file fallback
+
+    env_role = "fresh-role-id-from-env"
+    env_secret = "fresh-secret-id-from-env"
+
+    with patch.object(health_mod, "_ensure_hvac", return_value=True), \
+         patch.object(health_mod, "load_config", return_value=mock_cfg), \
+         patch.dict(sys.modules, {"hvac": mock_hvac}), \
+         patch.dict(os.environ, {
+             "OPENBAO_ROLE_ID": env_role,
+             "OPENBAO_SECRET_ID": env_secret,
+         }):
+        result = asyncio.run(handler.process(
+            {"config": {"url": "http://openbao.test:8210"}}, MagicMock()
+        ))
+
+    assert result["ok"] is True                            # REM-026: env creds succeed
+    assert result["data"]["authenticated"] is True         # REM-026
+    assert result["data"]["auth_method"] == "approle"      # REM-026
+    # Core assertion: fresh env values used, NOT stale config.json values
+    mock_client.auth.approle.login.assert_called_once_with(
+        role_id=env_role,
+        secret_id=env_secret,
+    )

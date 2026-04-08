@@ -180,15 +180,17 @@ class TestConnection(ApiHandler):
                 client.token = token
 
             elif auth_method == "approle":
-                # REM-025: Align credential resolution with openbao_client.py::_resolve_approle_credentials()
-                # role_id: plugin config > OPENBAO_ROLE_ID env var
-                role_id = plugin_cfg.role_id or os.environ.get("OPENBAO_ROLE_ID", "")
+                # REM-026: Mirror openbao_client.py::_resolve_approle_credentials() — env-first.
+                # role_id: OPENBAO_ROLE_ID env var > plugin config
+                # Divergence from REM-025: openbao_client.py is env-first; old health.py was config-first.
+                # When env has fresh credentials and config.json has stale values, config-first fails.
+                role_id = os.environ.get("OPENBAO_ROLE_ID") or plugin_cfg.role_id
 
-                # secret_id: plugin config > named env var (secret_id_env) > secret_id_file > OPENBAO_SECRET_ID fallback
-                secret_id = plugin_cfg.secret_id or ""
-                if not secret_id:
-                    secret_id_env_name = getattr(plugin_cfg, 'secret_id_env', None) or 'OPENBAO_SECRET_ID'
-                    secret_id = os.environ.get(secret_id_env_name, "")
+                # secret_id: env[secret_id_env_name] > plugin config > file
+                # openbao_client.py never reads config.secret_id — always reads env[secret_id_env_name].
+                # health.py mirrors: env first, plugin_cfg.secret_id as fallback for explicit config-only deployments.
+                secret_id_env_name = getattr(plugin_cfg, 'secret_id_env', None) or 'OPENBAO_SECRET_ID'
+                secret_id = os.environ.get(secret_id_env_name, "") or plugin_cfg.secret_id or ""
                 if not secret_id:
                     secret_id_file = getattr(plugin_cfg, 'secret_id_file', '') or ''
                     if secret_id_file:
