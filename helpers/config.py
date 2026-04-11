@@ -51,6 +51,9 @@ _FIELD_TO_ENV: Dict[str, str] = {
     "vault_token_file": "VAULT_TOKEN_FILE",
     "secret_id_env": "SECRET_ID_ENV",
     "secret_id_file": "SECRET_ID_FILE",
+    "k8s_role": "K8S_ROLE",
+    "k8s_jwt_path": "K8S_JWT_PATH",
+    "k8s_mount_path": "K8S_MOUNT_PATH",
 }
 
 # Fields with boolean type
@@ -93,12 +96,16 @@ class OpenBaoConfig:
 
     enabled: bool = False
     url: str = "http://127.0.0.1:8200"
-    auth_method: Literal["approle", "token"] = "token"  # REM-007: aligned with default_config.yaml
+    auth_method: Literal["approle", "token", "kubernetes"] = "token"  # REM-007, E-05: widened for kubernetes
     role_id: str = ""
     secret_id: str = ""
     secret_id_env: str = "OPENBAO_SECRET_ID"  # REM-031: name of env var holding secret_id (not the value itself)
     secret_id_file: str = ""  # REM-031: optional path to file containing secret_id
     token: str = ""
+    # E-05: Kubernetes auth fields
+    k8s_role: str = ""  # AC-05: required when auth_method='kubernetes'
+    k8s_jwt_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"  # AC-05
+    k8s_mount_path: str = "kubernetes"  # AC-05
     mount_point: str = "secret"
     secrets_path: str = "agentzero"
     vault_project_template: str = "agentzero-{project_slug}"

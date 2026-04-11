@@ -111,6 +111,7 @@
                     <div class="field-control">
                         <select x-model="config.auth_method">
                             <option value="approle">AppRole (recommended)</option>
+                            <option value="kubernetes">Kubernetes (Pod Service Account JWT)</option>
                             <option value="token">Token (dev only)</option>
                         </select>
                     </div>
@@ -172,6 +173,50 @@
                     </div>
                 </div>
 
+                <!-- E-05: Kubernetes auth fields (shown when auth_method=kubernetes) -->
+                <div x-show="config.authmethod === 'kubernetes'" x-cloak>
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Kubernetes Role</div>
+                            <div class="field-description">
+                                Name of the OpenBao Kubernetes auth role bound to this pod's service account.
+                                Required when using Kubernetes auth. Env var <code>OPENBAO_K8S_ROLE</code> takes priority if set.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" x-model="config.k8srole"
+                                   placeholder="agent-zero" /><span data-env-field="k8s_role"></span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">JWT File Path</div>
+                            <div class="field-description">
+                                Path to the Kubernetes service account JWT token file.
+                                Default is the standard K8s pod mount path — only change if using a custom projection.
+                                Env var <code>OPENBAO_K8S_JWT_PATH</code> takes priority if set.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" x-model="config.k8sjwtpath"
+                                   placeholder="/var/run/secrets/kubernetes.io/serviceaccount/token" /><span data-env-field="k8s_jwt_path"></span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="field-label">
+                            <div class="field-title">Kubernetes Auth Mount Path</div>
+                            <div class="field-description">
+                                OpenBao mount path for the Kubernetes auth method.
+                                Default is <code>kubernetes</code> — only change if the auth method is mounted at a custom path.
+                                Env var <code>OPENBAO_K8S_MOUNT_PATH</code> takes priority if set.
+                            </div>
+                        </div>
+                        <div class="field-control">
+                            <input type="text" x-model="config.k8smountpath"
+                                   placeholder="kubernetes" /><span data-env-field="k8s_mount_path"></span>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Mount Point -->
                 <div class="field">

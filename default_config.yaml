@@ -6,6 +6,15 @@ auth_method: token
 # role_id: ""                # non-sensitive; or set OPENBAO_ROLE_ID env var (env takes priority)
 # secret_id_env: OPENBAO_SECRET_ID   # name of env var holding secret_id (never store value here)
 # secret_id_file: ""         # optional: path to file containing secret_id (e.g. /run/secrets/...)
+# E-05: Kubernetes auth — use pod service account JWT (no static credentials)
+# To enable: set auth_method to kubernetes and configure k8s_role.
+# The JWT is automatically read from the pod mount — no k8s_jwt_path change needed
+# in standard Kubernetes deployments.
+#
+# auth_method: kubernetes
+# k8s_role: ""          # required: name of the OpenBao Kubernetes auth role
+# k8s_jwt_path: "/var/run/secrets/kubernetes.io/serviceaccount/token"  # default K8s SA token path
+# k8s_mount_path: "kubernetes"  # default OpenBao K8s auth mount path
 mount_point: secret
 secrets_path: agentzero
 tls_verify: true

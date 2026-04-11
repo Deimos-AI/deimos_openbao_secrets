@@ -210,6 +210,18 @@ class OpenBaoClient:
                         )
                         self._client = None
                         return
+            elif self._config.auth_method == "kubernetes":
+                try:
+                    self._auth_kubernetes()  # AC-01
+                except Exception as _k8s_exc:
+                    logger.error(
+                        "Kubernetes auth failed (%s). "
+                        "Plugin will operate in degraded mode. "
+                        "Verify k8s_role and that the pod service account has vault policy binding.",
+                        _k8s_exc,
+                    )
+                    self._client = None
+                    return
             elif self._config.auth_method == "token":
                 self._auth_token()
 
@@ -291,6 +303,61 @@ class OpenBaoClient:
         except Exception as exc:
             logger.error("AppRole authentication failed: %s", exc)
             raise
+
+    def _auth_kubernetes(self) -> None:
+        """Authenticate using Kubernetes service account JWT.
+
+        Reads the pod JWT from config.k8s_jwt_path and exchanges it for a
+        Vault client token via the hvac Kubernetes auth method.
+
+        Falls back gracefully (sets self._client = None) if the JWT file is
+        absent — indicating a non-Kubernetes deployment environment.
+
+        Satisfies: AC-01, AC-02, AC-03, AC-04, AC-10
+        """
+        if not self._client:
+            return
+
+        # AC-04: k8s_role is required
+        if not self._config.k8s_role:
+            raise RuntimeError(
+                "Kubernetes auth requires k8s_role. "
+                "Set OPENBAO_K8S_ROLE env var or configure k8s_role in plugin settings."
+            )
+
+        # AC-02: read JWT from configured file path
+        jwt_path = self._config.k8s_jwt_path or "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        try:
+            from pathlib import Path as _Path  # noqa: PLC0415
+            jwt_content = _Path(jwt_path).read_text().strip()
+        except (FileNotFoundError, PermissionError, OSError) as exc:
+            # AC-03: graceful non-K8s fallback — absent file is not a hard error
+            logger.warning(
+                "Kubernetes auth: JWT file not found or unreadable at '%s' "
+                "— is Agent Zero running inside a Kubernetes pod? "
+                "Plugin operating in degraded mode. Error: %s",
+                jwt_path,
+                exc,
+            )
+            self._client = None  # AC-03
+            return
+
+        # AC-10: log role prefix only — JWT content NEVER logged
+        safe_prefix = self._config.k8s_role[:8] if len(self._config.k8s_role) >= 8 else self._config.k8s_role
+        logger.info("Kubernetes login for k8s_role=%s...", safe_prefix)
+
+        try:
+            result = self._client.auth.kubernetes.login(
+                role=self._config.k8s_role,
+                jwt=jwt_content,
+                mount_point=self._config.k8s_mount_path or "kubernetes",
+            )
+            self._client.token = result["auth"]["client_token"]  # AC-02: memory only
+            logger.info("Kubernetes authentication successful")
+        except Exception as exc:
+            logger.error("Kubernetes authentication failed: %s", exc)
+            raise
+
 
 
     def _auth_token(self) -> None:
