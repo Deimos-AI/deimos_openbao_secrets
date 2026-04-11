@@ -280,23 +280,38 @@ class OpenBaoSecretsManager(SecretsManager):
         return list(self.load_secrets().keys())
 
     def get_secrets_for_prompt(self) -> str:
-        """Get formatted string of secret keys for system prompt.
+        """Return vault key names only for agent prompt injection.
 
-        Overrides base implementation which calls read_secrets_raw() directly
-        (bypassing load_secrets()). This version sources keys from the active
-        secrets backend (OpenBao or .env fallback).
+        SECURITY: Returns bare key NAME strings, not resolver alias strings.
+        Agent must explicitly construct the resolver alias to access a value.
+        No secret values are decrypted or loaded by this method.
 
-        Returns:
-            Formatted string of secret aliases for the system prompt.
+        Uses list_secret_keys() (KV v2 LIST on metadata endpoint) instead of
+        load_secrets() (full KV read with value decryption). This is the
+        least-privilege prompt injection — agents see what exists in vault,
+        not implicit access to everything.
+
+        Falls back to super().get_secrets_for_prompt() (default .env aliases)
+        when:
+        - _bao_client is None (OpenBao not initialized)
+        - list_secret_keys() raises an exception (vault unavailable)
+
+        Satisfies: E-07 AC-01, AC-02, AC-03, AC-04
         """
-        secrets = self.load_secrets()
-        if not secrets:
-            return ""
-
-        lines = []
-        for key in sorted(secrets.keys()):
-            lines.append(alias_for_key(key))
-        return "\n".join(lines)
+        if not self._bao_client:
+            # AC-03: no client → fall back to default .env behaviour
+            return super().get_secrets_for_prompt()
+        try:
+            keys = self._bao_client.list_secret_keys()  # AC-01: metadata LIST only
+            if not keys:
+                return ""  # AC-04: empty vault → hide {{secrets}} block
+            return ", ".join(sorted(keys))  # AC-02: bare names, sorted, comma-separated
+        except Exception as exc:
+            logger.warning(
+                "get_secrets_for_prompt: list_secret_keys failed (%s) — "
+                "falling back to default prompt", exc
+            )
+            return super().get_secrets_for_prompt()  # AC-03: graceful fallback
 
     def save_secrets(self, secrets_content: str) -> None:
         """Save secrets to the default .env backend.

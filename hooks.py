@@ -32,6 +32,13 @@ _REQUIREMENTS = _PLUGIN_DIR / "requirements.txt"
 # GET/POST /api/plugins/deimos_openbao_secrets/bootstrap -> api/bootstrap.py
 # POST /api/plugins/deimos_openbao_secrets/propagate -> api/propagate.py
 # POST /api/plugins/deimos_openbao_secrets/config_meta -> api/config_meta.py::ConfigMeta
+# agent_init extensions (auto-discovered from extensions/python/agent_init/):
+#   _05_openbao_secrets_resolver.py  — Surface C: hooks get_secrets_manager() → OpenBaoSecretsManager
+#   _10_start_auth_proxy.py          — starts auth proxy on agent init
+#   _20_openbao_mcp_header_resolver.py — MCP header resolver
+#   _25_openbao_secrets_prompt.py    — E-07: least-privilege prompt injection (key names only)
+# ---------------------------------------------------------------------------
+
 # ---------------------------------------------------------------------------
 
 

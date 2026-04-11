@@ -149,6 +149,7 @@ def mock_bao_client():
         "sealed": False,
     }
     client.cache_age = 5.0
+    client.list_secret_keys.return_value = ["API_KEY", "DB_PASSWORD"]  # E-07: bare names
     return client
 
 
@@ -252,10 +253,13 @@ class TestLoadSecrets:
 # ── get_secrets_for_prompt Tests ──────────────────────────────
 
 class TestGetSecretsForPrompt:
-    def test_returns_alias_formatted_keys(self, manager_with_bao):
+    def test_returns_key_names_only(self, manager_with_bao):
+        """E-07 AC-02: get_secrets_for_prompt returns bare key names (not resolver aliases)."""
         result = manager_with_bao.get_secrets_for_prompt()
-        assert "API_KEY" in result
-        assert "DB_PASSWORD" in result
+        # AC-02: bare sorted key names, comma-separated — no alias format
+        assert "API_KEY" in result    # E-07: key name present
+        assert "DB_PASSWORD" in result  # E-07: key name present
+        assert "secret(" not in result  # E-07: no resolver alias format
 
     def test_empty_when_no_secrets(self, manager_no_fallback):
         result = manager_no_fallback.get_secrets_for_prompt()
@@ -328,3 +332,60 @@ class TestRepr:
         r = repr(manager_with_bao)
         assert "OpenBaoSecretsManager" in r
         assert "127.0.0.1" in r
+
+
+# ---------------------------------------------------------------------------
+# E-07 AC-09: get_secrets_for_prompt() least-privilege override
+# ---------------------------------------------------------------------------
+
+def test_get_secrets_for_prompt_returns_key_names_only(manager_with_bao):
+    """AC-01, AC-02: returns sorted key names, no resolver aliases, no values."""
+    manager_with_bao._bao_client.list_secret_keys.return_value = [
+        "ZEBRA_KEY", "ALPHA_TOKEN", "MIDDLE_SECRET"
+    ]
+    result = manager_with_bao.get_secrets_for_prompt()
+    # AC-02: sorted bare key names, comma-separated
+    assert result == "ALPHA_TOKEN, MIDDLE_SECRET, ZEBRA_KEY"
+    # AC-01: list_secret_keys() was called (metadata LIST, not load_secrets)
+    manager_with_bao._bao_client.list_secret_keys.assert_called_once()
+
+
+def test_get_secrets_for_prompt_no_resolver_aliases(manager_with_bao):
+    """AC-02: output contains no resolver alias pattern."""
+    manager_with_bao._bao_client.list_secret_keys.return_value = ["API_KEY", "DB_PASS"]
+    result = manager_with_bao.get_secrets_for_prompt()
+    # AC-02: no alias pattern strings in output
+    assert "secret(" not in result
+    assert "secret_alias(" not in result
+
+
+def test_get_secrets_for_prompt_does_not_call_load_secrets(manager_with_bao):
+    """AC-01: load_secrets() is NOT called (no value decryption at prompt time)."""
+    from unittest.mock import patch
+    manager_with_bao._bao_client.list_secret_keys.return_value = ["KEY_A"]
+    with patch.object(manager_with_bao, "load_secrets") as mock_load:
+        manager_with_bao.get_secrets_for_prompt()
+    # AC-01: no value decryption
+    mock_load.assert_not_called()
+
+
+def test_get_secrets_for_prompt_empty_vault_returns_empty(manager_with_bao):
+    """AC-04: empty vault returns empty string (hides {{secrets}} block)."""
+    manager_with_bao._bao_client.list_secret_keys.return_value = []
+    result = manager_with_bao.get_secrets_for_prompt()
+    assert result == ""  # AC-04
+
+
+def test_get_secrets_for_prompt_no_client_falls_back(manager_disabled):
+    """AC-03: no bao_client -> falls back to super().get_secrets_for_prompt()."""
+    assert manager_disabled._bao_client is None
+    # Should not raise, returns parent fallback
+    result = manager_disabled.get_secrets_for_prompt()
+    assert isinstance(result, str)  # AC-03: graceful fallback
+
+
+def test_get_secrets_for_prompt_exception_falls_back(manager_with_bao):
+    """AC-03: list_secret_keys() raises -> graceful fallback to super()."""
+    manager_with_bao._bao_client.list_secret_keys.side_effect =         ConnectionError("vault unreachable")
+    result = manager_with_bao.get_secrets_for_prompt()  # AC-03: no raise
+    assert isinstance(result, str)  # fallback returns string, never raises
