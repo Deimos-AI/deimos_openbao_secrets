@@ -50,6 +50,32 @@ def load_config(plugin_dir: str):
     """Delegate to plugin's helpers/config.py::load_config()."""
     return _get_config_module().load_config(plugin_dir)
 
+_PLUGIN_REG_MODULE = "deimos_openbao_secrets_helpers_registry"
+
+
+def _get_registry_module():
+    """Load plugin's helpers/registry.py, cached in sys.modules.
+
+    Uses same importlib.util pattern as _get_config_module() to bypass
+    A0's api/ isolation (see module-level docstring for details).
+
+    Satisfies: E-06 AC-04 through AC-08 (compliance action)
+    """
+    if _PLUGIN_REG_MODULE not in sys.modules:
+        from helpers.plugins import find_plugin_dir  # A0's helpers.plugins — always safe
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            raise ImportError("deimos_openbao_secrets plugin dir not found via find_plugin_dir()")
+        reg_path = os.path.join(plugin_dir, "helpers", "registry.py")
+        if not os.path.exists(reg_path):
+            raise ImportError(f"helpers/registry.py not found at: {reg_path}")
+        spec = importlib.util.spec_from_file_location(_PLUGIN_REG_MODULE, reg_path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_PLUGIN_REG_MODULE] = mod  # register before exec_module
+        spec.loader.exec_module(mod)
+    return sys.modules[_PLUGIN_REG_MODULE]
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +213,10 @@ class SecretsManager(ApiHandler):
         try:
             if action == "list":
                 return self._list(client, mount, path)
+            elif action == "list_keys":
+                return self._list_keys(client, mount, path)  # AC-02, AC-03
+            elif action == "compliance":
+                return self._compliance(client, mount, path)  # AC-04
             elif action == "get":
                 return self._get(client, mount, path, input.get("key", ""))
             elif action == "set":
@@ -223,6 +253,63 @@ class SecretsManager(ApiHandler):
         data = self._read_all(client, mount, path)
         secrets = [{"key": k, "has_value": bool(data[k])} for k in sorted(data.keys())]
         return {"ok": True, "secrets": secrets}
+
+    def _list_keys(self, client, mount: str, path: str) -> dict:
+        """Return sorted vault key names — no values, no has_value metadata.
+
+        Uses kv.v2.list_secrets() (metadata LIST) instead of read_secret_version
+        (full value read). Zero value decryption.
+
+        Satisfies: AC-02, AC-03, AC-11
+        """
+        import hvac.exceptions  # noqa: PLC0415
+        try:
+            resp = client.secrets.kv.v2.list_secrets(
+                path=path, mount_point=mount
+            )
+            keys = sorted(resp.get("data", {}).get("keys", []))  # AC-02: sorted bare strings
+            return {"ok": True, "keys": keys}  # AC-02
+        except hvac.exceptions.InvalidPath:
+            return {"ok": True, "keys": []}  # AC-11: no secrets at path
+
+    def _compliance(self, client, mount: str, path: str) -> dict:
+        """Compare secrets registry vs vault — surface migration gaps.
+
+        Registry source: RegistryManager().get_entries() filtered by status != 'ignored'
+        Vault source: kv.v2.list_secrets() — key names only, no value decryption.
+
+        Returns missing (violations), synced (correctly migrated), orphans (vault-only).
+
+        Satisfies: AC-04 through AC-08
+        """
+        import hvac.exceptions  # noqa: PLC0415
+        reg_mod = _get_registry_module()  # loads helpers/registry.py via importlib.util
+        reg_mgr = reg_mod.RegistryManager()
+        # AC-05: registry keys that must be in vault (exclude ignored)
+        registry_keys = {
+            e.key for e in reg_mgr.get_entries()
+            if e.status != "ignored"
+        }
+        # Vault live state — key names only
+        try:
+            resp = client.secrets.kv.v2.list_secrets(
+                path=path, mount_point=mount
+            )
+            vault_keys = set(resp.get("data", {}).get("keys", []))
+        except hvac.exceptions.InvalidPath:
+            vault_keys = set()
+
+        missing = sorted(registry_keys - vault_keys)   # AC-05: violations
+        synced  = sorted(registry_keys & vault_keys)   # AC-06: correctly migrated
+        orphans = sorted(vault_keys - registry_keys)   # AC-07: vault-only entries
+        return {
+            "ok": True,
+            "compliant": len(missing) == 0,  # AC-08
+            "missing": missing,              # AC-05
+            "synced":  synced,               # AC-06
+            "orphans": orphans,              # AC-07
+        }
+
 
     def _get(self, client, mount: str, path: str, key: str) -> dict:
         """Read a single secret value (for reveal)."""

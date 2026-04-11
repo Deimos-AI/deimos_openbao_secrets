@@ -522,6 +522,38 @@ class OpenBaoClient:
             logger.debug("PSK: read_all_from_path failed for path=%s: %s", path, exc)
             return {}
 
+    def list_secret_keys(self, path_override: str = None) -> list:
+        """LIST on KV v2 metadata endpoint — key names only, zero value decryption.
+
+        Uses kv.v2.list_secrets() which performs a LIST operation on the metadata
+        path, returning only key names without reading or decrypting any values.
+        This is the lightweight prerequisite used by api/secrets.py actions
+        (list_keys, compliance) and by openbao_secrets_manager.get_secrets_for_prompt()
+        (E-07 least-privilege prompt injection).
+
+        Args:
+            path_override: Optional path override. Defaults to config.secrets_path.
+
+        Returns:
+            List of secret key name strings. Empty list if path has no secrets
+            or on any error.
+
+        Satisfies: E-06 AC-01
+        """
+        path = path_override or self._config.secrets_path
+        mount = self._config.mount_point
+        try:
+            resp = self._client.secrets.kv.v2.list_secrets(
+                path=path, mount_point=mount
+            )
+            return resp.get("data", {}).get("keys", [])  # AC-01: key names only
+        except hvac.exceptions.InvalidPath:
+            return []  # AC-01: no secrets at path → empty list
+        except Exception as exc:
+            logger.debug("list_secret_keys: failed for path=%s: %s", path, exc)
+            return []
+
+
     def health_check(self) -> Dict[str, Any]:
         """Check OpenBao server health and seal status.
 

@@ -445,3 +445,157 @@ def test_unknown_action_returns_error(secrets_mod):
 
     assert result["ok"] is False                    # AC-05: unknown_action
     assert "Unknown action" in result["error"]      # AC-05
+
+
+# ---------------------------------------------------------------------------
+# E-06 AC-13: list_keys action tests
+# ---------------------------------------------------------------------------
+
+def test_list_keys_returns_bare_sorted_names(secrets_mod):
+    """AC-02: list_keys returns sorted bare key name strings, no values."""
+    mock_client, mock_cfg = _make_action_mocks()
+    mock_client.secrets.kv.v2.list_secrets.return_value = {
+        "data": {"keys": ["ZEBRA", "ALPHA", "MIDDLE"]}
+    }
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(handler.process({"action": "list_keys"}, MagicMock()))
+    assert result["ok"] is True                                    # AC-02
+    assert result["keys"] == ["ALPHA", "MIDDLE", "ZEBRA"]          # AC-02: sorted
+    assert "values" not in result                                   # AC-02: no values
+    mock_client.secrets.kv.v2.list_secrets.assert_called_once()   # AC-01: list_secrets used
+
+
+def test_list_keys_empty_vault_returns_empty_list(secrets_mod):
+    """AC-11: empty vault (InvalidPath) returns ok=True with empty keys list."""
+    mock_client, mock_cfg = _make_action_mocks()
+    import hvac.exceptions as hvac_exc
+    mock_client.secrets.kv.v2.list_secrets.side_effect = hvac_exc.InvalidPath()
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)), \
+         patch.dict(sys.modules, {"hvac.exceptions": hvac_exc}):
+        result = asyncio.run(handler.process({"action": "list_keys"}, MagicMock()))
+    assert result["ok"] is True   # AC-11
+    assert result["keys"] == []   # AC-11
+
+
+def test_list_keys_vault_unavailable_returns_error(secrets_mod):
+    """AC-09: vault unavailable (_get_client raises) returns ok=False, no crash."""
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client",
+                      side_effect=ConnectionError("Connection refused")):
+        result = asyncio.run(handler.process({"action": "list_keys"}, MagicMock()))
+    assert result["ok"] is False                          # AC-09
+    assert "Connection refused" in result["error"]        # AC-09
+
+
+def test_list_keys_forbidden_returns_permission_error(secrets_mod):
+    """AC-10: Forbidden → permission denied error."""
+    mock_client, mock_cfg = _make_action_mocks()
+    import hvac.exceptions as hvac_exc
+    mock_client.secrets.kv.v2.list_secrets.side_effect = hvac_exc.Forbidden()
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)), \
+         patch.dict(sys.modules, {"hvac.exceptions": hvac_exc}):
+        result = asyncio.run(handler.process({"action": "list_keys"}, MagicMock()))
+    assert result["ok"] is False                           # AC-10
+    assert "Permission denied" in result["error"]         # AC-10
+
+
+def test_list_keys_with_project_name_scopes_path(secrets_mod):
+    """AC-03: project_name scopes list_keys to project sub-path."""
+    mock_client, mock_cfg = _make_action_mocks()
+    mock_client.secrets.kv.v2.list_secrets.return_value = {
+        "data": {"keys": ["PROJ_SECRET"]}
+    }
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)):
+        result = asyncio.run(
+            handler.process({"action": "list_keys", "project_name": "my-app"}, MagicMock())
+        )
+    assert result["ok"] is True
+    assert result["keys"] == ["PROJ_SECRET"]              # AC-03
+    call_kwargs = mock_client.secrets.kv.v2.list_secrets.call_args[1]
+    assert "my-app" in call_kwargs.get("path", "")        # AC-03: project-scoped path
+
+
+# ---------------------------------------------------------------------------
+# E-06 AC-13: compliance action tests
+# ---------------------------------------------------------------------------
+
+def test_compliance_detects_missing_keys(secrets_mod):
+    """AC-05, AC-08: registry keys absent from vault → missing, compliant=False."""
+    mock_client, mock_cfg = _make_action_mocks()
+    mock_client.secrets.kv.v2.list_secrets.return_value = {
+        "data": {"keys": ["SYNCED_KEY"]}
+    }
+    mock_entry_synced = MagicMock(key="SYNCED_KEY", status="migrated")
+    mock_entry_missing = MagicMock(key="MISSING_KEY", status="discovered")
+    mock_reg_mgr = MagicMock()
+    mock_reg_mgr.get_entries.return_value = [mock_entry_synced, mock_entry_missing]
+    mock_reg_mod = MagicMock()
+    mock_reg_mod.RegistryManager.return_value = mock_reg_mgr
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)), \
+         patch.object(secrets_mod, "_get_registry_module", return_value=mock_reg_mod):
+        result = asyncio.run(handler.process({"action": "compliance"}, MagicMock()))
+    assert result["ok"] is True
+    assert result["compliant"] is False                     # AC-08
+    assert result["missing"] == ["MISSING_KEY"]             # AC-05
+    assert result["synced"] == ["SYNCED_KEY"]               # AC-06
+
+
+def test_compliance_fully_synced_returns_compliant(secrets_mod):
+    """AC-08: all registry keys in vault → compliant=True, missing=[]."""
+    mock_client, mock_cfg = _make_action_mocks()
+    mock_client.secrets.kv.v2.list_secrets.return_value = {
+        "data": {"keys": ["KEY_A", "KEY_B"]}
+    }
+    mock_reg_mgr = MagicMock()
+    mock_reg_mgr.get_entries.return_value = [
+        MagicMock(key="KEY_A", status="migrated"),
+        MagicMock(key="KEY_B", status="migrated"),
+    ]
+    mock_reg_mod = MagicMock()
+    mock_reg_mod.RegistryManager.return_value = mock_reg_mgr
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)), \
+         patch.object(secrets_mod, "_get_registry_module", return_value=mock_reg_mod):
+        result = asyncio.run(handler.process({"action": "compliance"}, MagicMock()))
+    assert result["compliant"] is True                          # AC-08
+    assert result["missing"] == []                             # AC-05
+    assert sorted(result["synced"]) == ["KEY_A", "KEY_B"]      # AC-06
+
+
+def test_compliance_ignored_entries_excluded(secrets_mod):
+    """AC-05: ignored registry entries not counted as missing."""
+    mock_client, mock_cfg = _make_action_mocks()
+    mock_client.secrets.kv.v2.list_secrets.return_value = {"data": {"keys": []}}
+    mock_reg_mgr = MagicMock()
+    mock_reg_mgr.get_entries.return_value = [MagicMock(key="OLD_TOKEN", status="ignored")]
+    mock_reg_mod = MagicMock()
+    mock_reg_mod.RegistryManager.return_value = mock_reg_mgr
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)), \
+         patch.object(secrets_mod, "_get_registry_module", return_value=mock_reg_mod):
+        result = asyncio.run(handler.process({"action": "compliance"}, MagicMock()))
+    assert result["compliant"] is True    # AC-05: ignored entry not a violation
+    assert result["missing"] == []
+
+
+def test_compliance_detects_orphans(secrets_mod):
+    """AC-07: vault keys with no registry entry reported as orphans."""
+    mock_client, mock_cfg = _make_action_mocks()
+    mock_client.secrets.kv.v2.list_secrets.return_value = {
+        "data": {"keys": ["ORPHAN_KEY"]}
+    }
+    mock_reg_mgr = MagicMock()
+    mock_reg_mgr.get_entries.return_value = []   # empty registry
+    mock_reg_mod = MagicMock()
+    mock_reg_mod.RegistryManager.return_value = mock_reg_mgr
+    handler = secrets_mod.SecretsManager()
+    with patch.object(secrets_mod, "_get_client", return_value=(mock_client, mock_cfg)), \
+         patch.object(secrets_mod, "_get_registry_module", return_value=mock_reg_mod):
+        result = asyncio.run(handler.process({"action": "compliance"}, MagicMock()))
+    assert result["orphans"] == ["ORPHAN_KEY"]  # AC-07
+    assert result["compliant"] is True           # no registry keys to violate
