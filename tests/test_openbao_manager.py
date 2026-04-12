@@ -389,3 +389,17 @@ def test_get_secrets_for_prompt_exception_falls_back(manager_with_bao):
     manager_with_bao._bao_client.list_secret_keys.side_effect =         ConnectionError("vault unreachable")
     result = manager_with_bao.get_secrets_for_prompt()  # AC-03: no raise
     assert isinstance(result, str)  # fallback returns string, never raises
+
+
+# ---------------------------------------------------------------------------
+# E-07 AC-09: get_secrets_for_prompt() least-privilege override
+# ---------------------------------------------------------------------------
+
+def test_get_secrets_for_prompt_returns_key_names_only(manager_with_bao):
+    """AC-01, AC-02: returns sorted key names only — no resolver aliases, no values."""
+    manager_with_bao._bao_client.list_secret_keys.return_value = ["KEY_B", "KEY_A", "KEY_C"]
+    result = manager_with_bao.get_secrets_for_prompt()
+    # AC-02: bare key names, sorted, comma-separated — no $bao: prefix
+    assert result == "KEY_A, KEY_B, KEY_C"  # AC-09
+    # AC-01: no resolver alias format in result
+    assert "$bao:" not in result
