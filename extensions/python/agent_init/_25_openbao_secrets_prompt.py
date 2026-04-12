@@ -40,7 +40,7 @@ class OpenBaoSecretsPrompt(Extension):
     build_prompt in _13_secrets_prompt.py.
     """
 
-    async def execute(self, agent: Any = None, **kwargs: Any) -> None:
+    def execute(self, agent: Any = None, **kwargs: Any) -> None:
         """No-op — hook registration happens at module import time."""
         pass
 
