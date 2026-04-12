@@ -63,7 +63,7 @@ class OpenBaoSecretsResolver:
     helpers.secrets.get_secrets_manager.
     """
 
-    async def execute(self, agent, **kwargs):
+    def execute(self, agent, **kwargs):
         """No-op \u2014 hook registration happens at module import time."""
         pass
 
