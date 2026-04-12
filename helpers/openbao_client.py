@@ -616,7 +616,9 @@ class OpenBaoClient:
 
         Satisfies: E-06 AC-01
         """
-        path = path_override or self._config.secrets_path
+        if not self._client:
+            logger.debug("list_secret_keys: no client — returning empty list")
+            return []
         mount = self._config.mount_point
         try:
             resp = self._client.secrets.kv.v2.list_secrets(
