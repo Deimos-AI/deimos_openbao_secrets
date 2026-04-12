@@ -338,8 +338,8 @@ class TestRepr:
 # E-07 AC-09: get_secrets_for_prompt() least-privilege override
 # ---------------------------------------------------------------------------
 
-def test_get_secrets_for_prompt_returns_key_names_only(manager_with_bao):
-    """AC-01, AC-02: returns sorted key names, no resolver aliases, no values."""
+def test_get_secrets_for_prompt_calls_list_secret_keys(manager_with_bao):
+    """AC-01: list_secret_keys() called (metadata LIST, not load_secrets); AC-02: sorted names."""
     manager_with_bao._bao_client.list_secret_keys.return_value = [
         "ZEBRA_KEY", "ALPHA_TOKEN", "MIDDLE_SECRET"
     ]

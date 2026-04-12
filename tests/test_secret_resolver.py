@@ -134,7 +134,7 @@ def test_returns_none_when_get_secrets_manager_raises_internally():
 def test_execute_is_noop():
     """OpenBaoSecretsResolver.execute() completes without exception and returns None."""
     resolver = OpenBaoSecretsResolver()
-    result = asyncio.run(resolver.execute(agent=MagicMock()))
+    result = resolver.execute(agent=MagicMock())  # sync after async→sync fix
     assert result is None
 
 

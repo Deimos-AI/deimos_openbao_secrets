@@ -269,7 +269,7 @@ def get_plugin_config(result=None, **kwargs):
         for _field, _src in _sources.items():
             if _src == "env" and _field not in _CRED:
                 merged[_field] = _cfg_dict.get(_field, merged.get(_field))
-    except Exception:
-        pass  # Non-fatal: display degradation only — never break config load
+    except Exception as _err:
+        logger.debug("E-04 env overlay: non-fatal — %s", _err)  # Non-fatal: display degradation only
 
     return merged

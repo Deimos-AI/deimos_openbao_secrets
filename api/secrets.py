@@ -269,6 +269,8 @@ class SecretsManager(ApiHandler):
             )
             keys = sorted(resp.get("data", {}).get("keys", []))  # AC-02: sorted bare strings
             return {"ok": True, "keys": keys}  # AC-02
+        except hvac.exceptions.Forbidden:
+            return {"ok": False, "error": "Permission denied — check vault policy for LIST on metadata path"}  # AC-10
         except hvac.exceptions.InvalidPath:
             return {"ok": True, "keys": []}  # AC-11: no secrets at path
 

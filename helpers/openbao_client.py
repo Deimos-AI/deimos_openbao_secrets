@@ -330,6 +330,15 @@ class OpenBaoClient:
         try:
             from pathlib import Path as _Path  # noqa: PLC0415
             jwt_content = _Path(jwt_path).read_text().strip()
+            if not jwt_content:  # empty file guard (truncated volume mount)
+                logger.warning(
+                    "Kubernetes auth: JWT file at '%s' is empty — "
+                    "truncated volume mount or misconfigured projection. "
+                    "Plugin operating in degraded mode.",
+                    jwt_path,
+                )
+                self._client = None
+                return
         except (FileNotFoundError, PermissionError, OSError) as exc:
             # AC-03: graceful non-K8s fallback — absent file is not a hard error
             logger.warning(
