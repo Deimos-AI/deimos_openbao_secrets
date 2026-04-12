@@ -11,3 +11,23 @@ build/
 settings.json
 config.json
 .toggle-*
+
+# DeepEval LLM testing framework runtime
+.deepeval/
+
+# Virtual environments
+venv/
+.venv/
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# Logs
+*.log
+
+# Editor swap/temp
+*.swp
+*.swo
+*~
