@@ -526,6 +526,15 @@ DB_PASSWORD=hunter2
                     </div>
                     <div x-show="toolsExpanded" x-transition.opacity>
 
+                        <!-- E-08: Install Status section (AC-07) -->
+                        <div class="field">
+                            <div class="field-label">
+                                <div class="field-title">🚀 Install Status</div>
+                                <div class="field-description">Evergreen install flow status. <span id="install-status-text">Checking…</span></div>
+                            </div>
+                        </div>
+                        <div id="install-status-detail" class="mt-3" style="display:none; padding:8px; border-radius:6px; background:rgba(0,0,0,0.2); font-size:0.85rem;"></div>
+
                         <!-- REM-017: Secrets Registry Bootstrap section (AC-14) -->
                         <div class="field">
                             <div class="field-label">
@@ -538,6 +547,23 @@ DB_PASSWORD=hunter2
                             </div>
                         </div>
                         <div id="bootstrap-result" class="mt-3" style="display:none;"></div>
+
+                        <!-- E-08-ext: Vault Discovery Confirmation Gate -->
+                        <div id="discovery-gate" style="display:none; background:rgba(255,193,7,0.08); border:1px solid rgba(255,193,7,0.25); border-radius:8px; padding:16px; margin:12px 0;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                                <span style="font-size:1.4em;">🔑</span>
+                                <strong id="discovery-title">Pre-existing secrets found in vault</strong>
+                            </div>
+                            <div id="discovery-key-list" style="margin:8px 0; font-size:0.85em; color:#aaa;"></div>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <button id="btn-discovery-propagate" class="btn btn-field btn-confirm"
+                                        onclick="discoveryPropagate()">✅ Deploy these secrets to consuming configs</button>
+                                <a href="#" id="btn-discovery-skip" style="color:#888; font-size:0.85em; text-decoration:underline;"
+                                   onclick="discoveryDefer(); return false;">Skip for now</a>
+                                <span id="discovery-spinner" style="display:none; color:#888; margin-left:8px;">⏳ Processing...</span>
+                            </div>
+                            <div id="discovery-result" class="mt-2" style="display:none;"></div>
+                        </div>
 
                         <!-- Discover & Sync Plugin Secrets -->
                         <div class="field">
@@ -1183,6 +1209,63 @@ async function _initEnvOverrides() {
     }
 }
 
+// E-08: Install Status fetcher (AC-07)
+async function _fetchInstallStatus() {
+    try {
+        const statusText = document.getElementById('install-status-text');
+        const statusDetail = document.getElementById('install-status-detail');
+        if (!statusText) return;
+
+        const resp = await fetch(
+            '/api/plugins/deimos_openbao_secrets/install_status',
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }
+        );
+        if (!resp.ok) {
+            statusText.textContent = 'Status unavailable';
+            return;
+        }
+        const data = await resp.json();
+        const s = data.status || {};
+
+        // Build status summary
+        const parts = [];
+        if (s.connected && s.authenticated) parts.push('✅ Connected');
+        else if (s.connected) parts.push('⚠️ Connected (auth failed)');
+        else parts.push('❌ Not connected');
+
+        if (s.mount_exists) parts.push('✅ Mount exists');
+        else parts.push('⚠️ Mount missing');
+
+        if (s.path_exists) parts.push('✅ Path exists');
+        else parts.push('⚠️ Path missing');
+
+        parts.push(`🔑 ${s.secrets_count || 0} secrets`);
+        parts.push(`📋 ${s.registry_count || 0} registry entries`);
+
+        statusText.textContent = parts.join(' · ');
+
+        // Show detail panel if there are errors
+        if (s.errors && s.errors.length > 0) {
+            statusDetail.style.display = 'block';
+            statusDetail.innerHTML = '<strong>Issues:</strong><br>' +
+                s.errors.map(e => '• ' + e).join('<br>');
+        }
+    } catch (_e) {
+        const statusText = document.getElementById('install-status-text');
+        if (statusText) statusText.textContent = 'Status check failed';
+    }
+}
+
+// Auto-fetch install status when config page loads
+document.addEventListener('alpine:initialized', () => {
+    setTimeout(_fetchInstallStatus, 500);
+});
+
 function _applyEnvBadges(overrides) {
     document.querySelectorAll('[x-model^="config."]').forEach(function(el) {
         var field = el.getAttribute('x-model').replace('config.', '');
@@ -1229,6 +1312,98 @@ function _applyEnvBadges(overrides) {
         anchor.appendChild(badge);
     });
 }
+
+// E-08-ext: Discovery confirmation gate functions
+async function checkDiscoveryGate() {
+    const gateDiv = document.getElementById('discovery-gate');
+    if (!gateDiv) return;
+    try {
+        const resp = await fetch('/api/plugins/deimos_openbao_secrets/install_status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        if (!data.ok || !data.status) { gateDiv.style.display = 'none'; return; }
+        const s = data.status;
+        if (!s.awaiting_confirmation) { gateDiv.style.display = 'none'; return; }
+        // Show the gate
+        document.getElementById('discovery-title').textContent =
+            '\uD83D\uDD11 ' + s.vault_secrets_count + ' pre-existing secrets found in vault';
+        const keyList = document.getElementById('discovery-key-list');
+        keyList.innerHTML = '<code>' + (s.vault_secret_keys || []).join('</code> &middot; <code>') + '</code>';
+        gateDiv.style.display = 'block';
+    } catch (err) {
+        gateDiv.style.display = 'none';
+    }
+}
+
+async function discoveryPropagate() {
+    const btn = document.getElementById('btn-discovery-propagate');
+    const skipLink = document.getElementById('btn-discovery-skip');
+    const spinner = document.getElementById('discovery-spinner');
+    const resultDiv = document.getElementById('discovery-result');
+    btn.disabled = true;
+    skipLink.style.display = 'none';
+    spinner.style.display = 'inline';
+    resultDiv.style.display = 'none';
+    try {
+        const resp = await fetch('/api/plugins/deimos_openbao_secrets/install/propagate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            resultDiv.innerHTML = '<div style="color:#4CAF50;">\u2705 ' + data.propagated + ' secrets propagated successfully.</div>';
+            document.getElementById('discovery-gate').style.display = 'none';
+        } else {
+            resultDiv.innerHTML = '<div style="color:#f44336;">\u274C ' + (data.errors || ['Unknown error']).join(', ') + '</div>';
+            btn.disabled = false;
+            skipLink.style.display = 'inline';
+        }
+        resultDiv.style.display = 'block';
+    } catch (err) {
+        resultDiv.innerHTML = '<div style="color:#f44336;">\u274C Request failed: ' + err + '</div>';
+        resultDiv.style.display = 'block';
+        btn.disabled = false;
+        skipLink.style.display = 'inline';
+    } finally {
+        spinner.style.display = 'none';
+    }
+}
+
+async function discoveryDefer() {
+    const spinner = document.getElementById('discovery-spinner');
+    const resultDiv = document.getElementById('discovery-result');
+    spinner.style.display = 'inline';
+    resultDiv.style.display = 'none';
+    try {
+        const resp = await fetch('/api/plugins/deimos_openbao_secrets/install/defer-propagation', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({})
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            document.getElementById('discovery-gate').style.display = 'none';
+            if (window.toastFrontendError) {
+                window.toastFrontendError('Propagation deferred. You can trigger it later from the propagate section.', 'Discovery');
+            }
+        } else {
+            resultDiv.innerHTML = '<div style="color:#f44336;">\u274C ' + (data.errors || ['Unknown error']).join(', ') + '</div>';
+            resultDiv.style.display = 'block';
+        }
+    } catch (err) {
+        resultDiv.innerHTML = '<div style="color:#f44336;">\u274C Request failed: ' + err + '</div>';
+        resultDiv.style.display = 'block';
+    } finally {
+        spinner.style.display = 'none';
+    }
+}
+
+// Auto-check discovery gate on page load
+document.addEventListener('DOMContentLoaded', function() { setTimeout(checkDiscoveryGate, 1500); });
 
 </script>
 </body>

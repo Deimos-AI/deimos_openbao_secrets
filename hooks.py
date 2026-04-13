@@ -32,6 +32,9 @@ _REQUIREMENTS = _PLUGIN_DIR / "requirements.txt"
 # GET/POST /api/plugins/deimos_openbao_secrets/bootstrap -> api/bootstrap.py
 # POST /api/plugins/deimos_openbao_secrets/propagate -> api/propagate.py
 # POST /api/plugins/deimos_openbao_secrets/config_meta -> api/config_meta.py::ConfigMeta
+# GET/POST /api/plugins/deimos_openbao_secrets/install_status -> api/install_status.py::InstallStatus
+# POST /api/plugins/deimos_openbao_secrets/install/propagate -> api/install_actions.py::InstallActions
+# POST /api/plugins/deimos_openbao_secrets/install/defer-propagation -> api/install_actions.py::InstallActions
 # agent_init extensions (auto-discovered from extensions/python/agent_init/):
 #   _05_openbao_secrets_resolver.py  — Surface C: hooks get_secrets_manager() → OpenBaoSecretsManager
 #   _10_start_auth_proxy.py          — starts auth proxy on agent init
@@ -147,37 +150,175 @@ def denormalize_config_keys(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def install():
-    """Install plugin dependencies into the framework runtime.
+    """Install plugin dependencies and bootstrap the OpenBao vault.
 
     Called automatically by the plugin installer after:
       - install_from_git()
       - install_from_zip()
       - update_from_git()
 
-    Reads requirements.txt and installs into the current Python
-    environment (the A0 framework venv, typically /opt/venv-a0).
+    Performs two phases:
+      Phase 1: Install pip dependencies from requirements.txt.
+      Phase 2: Bootstrap the OpenBao vault (evergreen install flow):
+        - Apply core patch (PR #1394) if needed
+        - Validate OpenBao connectivity
+        - Create KV v2 mount if absent
+        - Create secrets path if absent
+        - Seed terminal_secrets from env vars
+        - Bootstrap the secrets registry
+
+    Phase 2 is non-fatal — errors are logged but do not prevent the
+    plugin from loading. This allows the plugin to be installed before
+    OpenBao is configured.
+
+    Satisfies: E-08 AC-01, AC-02, AC-03, AC-04, AC-05, AC-08
     """
-    if not _REQUIREMENTS.exists():
+    # Phase 1: Install pip dependencies
+    if _REQUIREMENTS.exists():
+        logger.info("Installing deimos_openbao_secrets dependencies from %s", _REQUIREMENTS)
+        try:
+            subprocess.check_call(
+                [
+                    sys.executable, "-m", "pip", "install",
+                    "--quiet",
+                    "-r", str(_REQUIREMENTS),
+                ],
+                timeout=120,
+            )
+            logger.info("deimos_openbao_secrets dependencies installed successfully")
+        except subprocess.CalledProcessError as exc:
+            logger.error("Failed to install dependencies: %s", exc)
+            raise
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout installing dependencies (120s)")
+            raise
+    else:
         logger.warning("requirements.txt not found at %s -- skipping", _REQUIREMENTS)
+
+    # Phase 2: Bootstrap OpenBao vault (evergreen install flow)
+    _bootstrap_vault()
+
+
+def _bootstrap_vault() -> None:
+    """Run the evergreen install flow: connect, mount, seed, registry.
+
+    Non-fatal — all errors are logged but do not prevent plugin load.
+    Each step is independently guarded so one failure doesn't block
+    subsequent steps.
+
+    E-08 extension: After ensure_secrets_path, forks into:
+      - Fresh Evergreen Path: seed from env → bootstrap registry
+      - Brownfield Discovery Path: register discovered → defer to user
+
+    Satisfies: E-08 AC-01 through AC-05, AC-08; E-08-ext AC-D1, AC-D2
+    """
+    try:
+        from helpers.install_flow import (
+            apply_core_patch,
+            validate_connection,
+            ensure_kv_mount,
+            ensure_secrets_path,
+            seed_terminal_secrets,
+            bootstrap_registry,
+            discover_existing_secrets,
+            register_discovered_secrets,
+        )
+    except ImportError as exc:
+        logger.warning("install_flow module not available: %s", exc)
         return
 
-    logger.info("Installing deimos_openbao_secrets dependencies from %s", _REQUIREMENTS)
+    # AC-patch: Apply core patch for PR #1394 (hook_context support)
+    patch_result = apply_core_patch()
+    if patch_result.get("error"):
+        logger.warning("Core patch: %s", patch_result["error"])
+
+    # Load config for connection/mount/path operations
     try:
-        subprocess.check_call(
-            [
-                sys.executable, "-m", "pip", "install",
-                "--quiet",
-                "-r", str(_REQUIREMENTS),
-            ],
-            timeout=120,
+        from helpers.config import load_config
+        from helpers.plugins import find_plugin_dir
+        plugin_dir = find_plugin_dir("deimos_openbao_secrets")
+        if not plugin_dir:
+            logger.debug("Plugin dir not found — skipping vault bootstrap")
+            return
+        config = load_config(plugin_dir)
+    except Exception as exc:
+        logger.warning("Could not load config for vault bootstrap: %s", exc)
+        return
+
+    if not config.enabled:
+        logger.info("OpenBao plugin disabled — skipping vault bootstrap")
+        return
+
+    # AC-01: Validate connectivity
+    conn = validate_connection(config)
+    if conn.get("error"):
+        logger.warning("OpenBao connectivity check failed: %s", conn["error"])
+        return
+
+    # AC-02: Ensure KV v2 mount exists
+    mount_result = ensure_kv_mount(config)
+    if mount_result.get("error"):
+        logger.warning("KV mount setup failed: %s", mount_result["error"])
+        return
+
+    # AC-03: Ensure secrets path exists
+    path_result = ensure_secrets_path(config)
+    if path_result.get("error"):
+        logger.warning("Secrets path setup failed: %s", path_result["error"])
+        return
+
+    # E-08-ext AC-D1: Vault secrets discovery fork
+    discovery = discover_existing_secrets(config)
+    if discovery.get("error"):
+        logger.warning("Vault discovery scan failed: %s", discovery["error"])
+        # Non-fatal — fall through to fresh path
+
+    if discovery["count"] > 0:
+        # ── Brownfield Discovery Path ──
+        # Vault has pre-existing secrets — register as discovered,
+        # do NOT seed from env, do NOT run propagation.
+        # User must confirm propagation via WebUI.
+        logger.info(
+            "Vault contains %d pre-existing secrets — deferring to user confirmation for propagation",
+            discovery["count"],
         )
-        logger.info("deimos_openbao_secrets dependencies installed successfully")
-    except subprocess.CalledProcessError as exc:
-        logger.error("Failed to install dependencies: %s", exc)
-        raise
-    except subprocess.TimeoutExpired:
-        logger.error("Timeout installing dependencies (120s)")
-        raise
+        reg_result = register_discovered_secrets(config, discovery["keys"])
+        if reg_result.get("error"):
+            logger.warning("Discovery registration failed: %s", reg_result["error"])
+        else:
+            logger.info(
+                "Discovery registered: %d new, %d skipped",
+                reg_result.get("registered", 0),
+                reg_result.get("skipped", 0),
+            )
+        return  # Stop here — user must confirm via WebUI
+
+    # ── Fresh Evergreen Path ──
+    # AC-04: Seed terminal_secrets from env vars
+    seed_result = seed_terminal_secrets(config)
+    if seed_result.get("errors"):
+        logger.warning(
+            "Secret seeding completed with %d errors",
+            len(seed_result["errors"]),
+        )
+    logger.info(
+        "Secret seeding: %d seeded, %d skipped",
+        len(seed_result.get("seeded", [])),
+        len(seed_result.get("skipped", [])),
+    )
+
+    # AC-05: Bootstrap registry with seeded entries
+    registry_result = bootstrap_registry(config, seed_result.get("seeded", []))
+    if registry_result.get("error"):
+        logger.warning("Registry bootstrap failed: %s", registry_result["error"])
+    else:
+        logger.info(
+            "Registry bootstrapped: %d registered, %d skipped",
+            registry_result.get("registered", 0),
+            registry_result.get("skipped", 0),
+        )
+
+    logger.info("Evergreen install flow complete")
 
 
 # ---------------------------------------------------------------------------

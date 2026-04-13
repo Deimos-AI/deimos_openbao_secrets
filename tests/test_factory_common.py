@@ -4,21 +4,20 @@ Acceptance criteria covered:
   AC-01  This file exists at tests/test_factory_common.py
   AC-02  Happy path: first call initialises manager and stores it in module state
   AC-03  Bool retry guard: second call after failed init returns None (no new attempt)
-  AC-04  reset()-based retry: after reset(), next call triggers fresh init attempt
-  AC-05  reset() clears state: clears _manager, _init_attempted, _proxy_instance
+  AC-05  reset() clears state: clears _manager, _locked_at, _is_permanent, _proxy_instance
   AC-06  reset() stops proxy: proxy.stop() called if _proxy_instance was registered
   AC-07  _inject_proxy_env(port): correct env vars set (OPENAI/ANTHROPIC/OPENROUTER only)
   AC-08  All tests pass, pytest 0 failures
+  AC-09  F-09: transient lockouts auto-expire after _TRANSIENT_TTL; permanent stay locked
 
 Deviation note — AC-03/AC-04 vs story description:
   The story references 'init_retry_backoff_seconds' (time-based retry window).
-  helpers/factory_common.py has NO time-based backoff — it uses a simple bool
-  _init_attempted (set True on first attempt, cleared by reset()).
-  - AC-03: 'within window' maps to 'bool guard still True, no reset() called'
+  factory_common.py now uses TTL-based lockout: _locked_at (monotonic timestamp)
+  + _is_permanent (bool). Transient failures auto-expire; permanent stay locked.
+  - AC-03: 'within window' maps to '_is_locked() returns True, TTL not expired'
             → second call returns None without a new init attempt
-  - AC-04: 'after window elapsed' maps to 'after reset() is called'
-            → reset() clears _init_attempted=False, next call retries
-
+  - AC-04: 'after window elapsed' maps to 'after TTL expires or reset() called'
+            → transient lock auto-expires, next call retries
 Deviation note — AC-07 vs story description:
   Story AC-7 mentions GH_TOKEN should be set by _inject_proxy_env().
   The actual implementation does NOT set GH_TOKEN — only 6 env vars are set:
@@ -29,6 +28,7 @@ Deviation note — AC-07 vs story description:
 from __future__ import annotations
 
 import os
+import time
 import sys
 import types
 from contextlib import contextmanager
@@ -173,7 +173,7 @@ def deps_fail():
 
     Simulates the scenario where OpenBao plugin dependencies (hvac, tenacity,
     circuitbreaker) are not installed. The factory returns None on first call
-    and sets _init_attempted=True.
+    and permanently locks (deps missing = permanent failure).
     """
     mock_deps = MagicMock()
     mock_deps.ensure_dependencies.return_value = False
@@ -214,11 +214,12 @@ class TestHappyPathInit:
         assert r1 is mock_manager
         assert r2 is mock_manager
 
-    def test_init_attempted_set_true_after_success(self):
-        """_init_attempted is True after a successful init."""
+    def test_not_locked_after_success(self):
+        """_is_locked() is False after a successful init (_locked_at=0.0, _manager set)."""
         with _happy_path():
             fc.get_openbao_manager()
-        assert fc._init_attempted is True
+        assert fc._is_locked() is False  # success: _locked_at=0.0 → unlocked
+        assert fc._manager is not None
 
 
 # ===========================================================================
@@ -226,11 +227,10 @@ class TestHappyPathInit:
 # ===========================================================================
 
 class TestRetryGuardBoolFlag:
-    """AC-03: after failed init (_init_attempted=True), second call returns None.
+    """AC-03: after permanent failed init (_is_locked()), second call returns None.
 
-    Story describes this as 'second call within init_retry_backoff_seconds'.
-    factory_common.py has no time-based backoff — the guard is a simple bool.
-    'Within window' maps to: no reset() has been called, _init_attempted=True.
+    Uses deps_fail fixture which triggers a PERMANENT failure (deps missing).
+    Permanent failures stay locked until reset().
     """
 
     def test_first_failed_call_returns_none(self, deps_fail):  # noqa: ARG002
@@ -239,28 +239,28 @@ class TestRetryGuardBoolFlag:
         assert result is None
 
     def test_second_call_after_failure_returns_none(self, deps_fail):  # noqa: ARG002
-        """Second call (bool guard active, no reset) also returns None."""
-        fc.get_openbao_manager()  # first: fails, sets _init_attempted=True
-        result = fc.get_openbao_manager()  # second: bool guard → None
+        """Second call (permanent lock active, no reset) also returns None."""
+        fc.get_openbao_manager()  # first: fails, locks permanently
+        result = fc.get_openbao_manager()  # second: locked → None
         assert result is None
 
     def test_ensure_deps_called_exactly_once(self, deps_fail):
         """ensure_dependencies is called only once across two failed calls.
 
-        The bool guard prevents a second init attempt — manager creation
+        The permanent lock prevents a second init attempt — manager creation
         (ensure_deps check) is invoked exactly once.
         """
         fc.get_openbao_manager()  # init attempt
-        fc.get_openbao_manager()  # bool guard — no new attempt
+        fc.get_openbao_manager()  # locked — no new attempt
         deps_fail.ensure_dependencies.assert_called_once()
 
-    def test_init_attempted_remains_true_without_reset(self, deps_fail):  # noqa: ARG002
-        """_init_attempted stays True between calls when reset() is not called."""
+    def test_permanent_lock_stays_without_reset(self, deps_fail):  # noqa: ARG002
+        """Permanent lock stays active between calls when reset() is not called."""
         fc.get_openbao_manager()
-        assert fc._init_attempted is True
+        assert fc._is_locked() is True
+        assert fc._is_permanent is True
         fc.get_openbao_manager()
-        assert fc._init_attempted is True
-
+        assert fc._is_locked() is True
 
 # ===========================================================================
 # AC-04 — reset()-based retry: after reset(), next call triggers fresh attempt
@@ -280,12 +280,14 @@ class TestResetBasedRetry:
         fc.get_openbao_manager()  # attempt 2 — retries
         assert deps_fail.ensure_dependencies.call_count == 2
 
-    def test_init_attempted_false_immediately_after_reset(self, deps_fail):  # noqa: ARG002
-        """reset() sets _init_attempted=False, confirmed before next call."""
-        fc.get_openbao_manager()  # fails → _init_attempted=True
-        assert fc._init_attempted is True
+    def test_unlocked_immediately_after_reset(self, deps_fail):  # noqa: ARG002
+        """reset() clears lock state, confirmed before next call."""
+        fc.get_openbao_manager()  # fails → locked
+        assert fc._is_locked() is True
         fc.reset()
-        assert fc._init_attempted is False
+        assert fc._is_locked() is False
+        assert fc._locked_at == 0.0
+        assert fc._is_permanent is False
 
     def test_successful_manager_returned_after_reset_and_retry(self):
         """After failed init + reset(), a successful retry returns a manager."""
@@ -311,7 +313,7 @@ class TestResetBasedRetry:
 # ===========================================================================
 
 class TestResetClearsState:
-    """AC-05: reset() clears _manager, _init_attempted, _proxy_instance.
+    """AC-05: reset() clears _manager, _locked_at, _is_permanent, _proxy_instance.
 
     After reset(), a subsequent factory call triggers a fresh init attempt
     regardless of prior state.
@@ -325,8 +327,8 @@ class TestResetClearsState:
         fc.reset()
         assert fc._manager is None
 
-    def test_reset_clears_init_attempted(self):
-        """reset() sets _init_attempted to False."""
+    def test_reset_clears_lock_state(self):
+        """reset() sets _locked_at=0.0 and _is_permanent=False."""
         mock_fail = MagicMock()
         mock_fail.ensure_dependencies.return_value = False
         with patch.dict(sys.modules, {
@@ -334,9 +336,11 @@ class TestResetClearsState:
             "helpers.plugins": MagicMock(),
         }):
             fc.get_openbao_manager()
-        assert fc._init_attempted is True
+        assert fc._is_locked() is True
         fc.reset()
-        assert fc._init_attempted is False
+        assert fc._locked_at == 0.0
+        assert fc._is_permanent is False
+        assert fc._is_locked() is False
 
     def test_reset_clears_proxy_instance(self):
         """reset() sets _proxy_instance to None."""
@@ -494,3 +498,87 @@ class TestInjectProxyEnv:
         gh_token_before = os.environ.get("GH_TOKEN")
         fc._inject_proxy_env(5000)
         assert os.environ.get("GH_TOKEN") == gh_token_before
+
+
+# ===========================================================================
+# AC-09 — F-09 fix: TTL-based transient lockout auto-expiry
+# ===========================================================================
+
+class TestTransientLockoutTTL:
+    """AC-06 (F-09): Transient failures auto-expire after _TRANSIENT_TTL.
+
+    Permanent failures stay locked until reset() or process restart.
+    Transient failures unlock after _TRANSIENT_TTL seconds, allowing retry.
+    """
+
+    def test_transient_lock_not_permanent(self):
+        """After transient failure exhausts retries, _is_permanent is False."""
+        # Simulate transient failure: config validation returns errors
+        mock_deps = MagicMock()
+        mock_deps.ensure_dependencies.return_value = True
+        mock_plugins = MagicMock()
+        mock_plugins.find_plugin_dir.return_value = _FAKE_PLUGIN_DIR
+
+        # Set max retries to 1 to speed up test
+        original_max = fc._MAX_RETRIES
+        fc._MAX_RETRIES = 1
+        try:
+            with patch.dict(sys.modules, {
+                "helpers.deps": mock_deps,
+                "helpers.plugins": mock_plugins,
+            }):
+                with patch("importlib.util.spec_from_file_location") as mock_spec:
+                    spec = MagicMock()
+                    spec.name = "openbao_config"
+                    spec.loader.exec_module.side_effect = Exception("transient")
+                    mock_spec.return_value = spec
+                    with patch("importlib.util.module_from_spec", return_value=types.SimpleNamespace()):
+                        result = fc.get_openbao_manager()
+            assert result is None
+            assert fc._is_locked() is True
+            assert fc._is_permanent is False
+        finally:
+            fc._MAX_RETRIES = original_max
+
+    def test_permanent_lock_stays_locked(self):
+        """Permanent failure (deps missing) stays locked regardless of TTL."""
+        mock_deps = MagicMock()
+        mock_deps.ensure_dependencies.return_value = False
+        with patch.dict(sys.modules, {
+            "helpers.deps": mock_deps,
+            "helpers.plugins": MagicMock(),
+        }):
+            fc.get_openbao_manager()
+        assert fc._is_locked() is True
+        assert fc._is_permanent is True
+        # Simulate TTL expiry by manipulating _locked_at
+        fc._locked_at = time.monotonic() - fc._TRANSIENT_TTL - 10
+        # Permanent lock should still be locked even after TTL
+        assert fc._is_locked() is True
+
+    def test_transient_lock_auto_expires(self):
+        """Transient lock auto-expires after _TRANSIENT_TTL."""
+        # Manually set a transient lock in the past
+        fc._locked_at = time.monotonic() - fc._TRANSIENT_TTL - 1
+        fc._is_permanent = False
+        assert fc._is_locked() is False  # auto-expired
+
+    def test_transient_lock_not_yet_expired(self):
+        """Transient lock is still active within TTL window."""
+        fc._locked_at = time.monotonic()  # just locked
+        fc._is_permanent = False
+        assert fc._is_locked() is True  # not yet expired
+
+    def test_is_locked_false_when_unlocked(self):
+        """_is_locked() returns False when _locked_at is 0.0."""
+        assert fc._locked_at == 0.0
+        assert fc._is_locked() is False
+
+    def test_reset_clears_transient_lock(self):
+        """reset() clears both transient and permanent locks."""
+        fc._locked_at = time.monotonic()
+        fc._is_permanent = False
+        fc.reset()
+        assert fc._locked_at == 0.0
+        assert fc._is_permanent is False
+        assert fc._is_locked() is False

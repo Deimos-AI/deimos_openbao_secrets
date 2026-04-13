@@ -59,16 +59,39 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Module-level singleton -- shared across all three factory extensions
-_manager: Optional["SecretsManager"] = None
 _init_lock = threading.Lock()
-_init_attempted = False
+_locked_at: float = 0.0  # monotonic timestamp when factory was locked (0 = unlocked)
+_is_permanent: bool = False  # True = permanent lock (deps missing, plugin disabled)
 _retry_count = 0
 _MAX_RETRIES = int(os.environ.get("OPENBAO_FACTORY_MAX_RETRIES", "3"))
 _RETRY_BACKOFF_BASE = float(os.environ.get("OPENBAO_FACTORY_RETRY_BACKOFF", "1.0"))
+_TRANSIENT_TTL = float(os.environ.get("OPENBAO_FACTORY_TRANSIENT_TTL", "60"))  # F-09: auto-expiry for transient locks (seconds)
 
 # AuthProxy instance -- registered by extensions/python/agent_init/_10_start_auth_proxy.py
 # reset() will call stop() on it to shut down the proxy daemon gracefully.
 _proxy_instance = None
+
+
+def _is_locked() -> bool:
+    """Check if the factory is currently locked out.
+
+    AC-06 (F-09 fix): Transient lockouts auto-expire after _TRANSIENT_TTL seconds.
+    Permanent lockouts stay locked until process restart or reset().
+
+    Returns:
+        True if factory is locked (and TTL has not expired for transient locks).
+    """
+    if _locked_at == 0.0:
+        return False
+    if _is_permanent:
+        return True
+    # Transient lock: check TTL expiry
+    elapsed = time.monotonic() - _locked_at
+    if elapsed >= _TRANSIENT_TTL:
+        # Auto-expire — allow retry
+        return False
+    return True
+
 
 
 def _inject_proxy_env(port: int) -> None:
@@ -249,21 +272,22 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
     with exponential backoff.  Only permanent failures (deps missing,
     plugin not found, plugin disabled) lock out the factory immediately.
     """
-    global _manager, _init_attempted, _retry_count
+    global _manager, _locked_at, _is_permanent, _retry_count
 
     if _manager is not None:
         # Fast path -- already initialized.
         return _manager
 
-    if _init_attempted:
-        # Already tried and permanently failed -- don't retry on every call.
+    if _is_locked():
+        # AC-06: F-09 fix — transient failures auto-expire after _TRANSIENT_TTL seconds.
+        # Permanent failures stay locked until process restart or reset().
         return None
 
     with _init_lock:
         # Double-check after acquiring lock
         if _manager is not None:
             return _manager
-        if _init_attempted:
+        if _is_locked():
             return None
 
         while _retry_count < _MAX_RETRIES:
@@ -272,13 +296,15 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             if manager is not None:
                 # Success — store singleton and mark complete
                 _manager = manager
-                _init_attempted = True
+                _locked_at = 0.0  # unlocked
+                _is_permanent = False
                 _retry_count = 0
                 return _manager
 
             if is_permanent:
-                # Permanent failure — lock out immediately
-                _init_attempted = True
+                # Permanent failure — lock out permanently
+                _locked_at = time.monotonic()
+                _is_permanent = True
                 logger.debug(
                     "Permanent init failure — factory locked (attempt %d/%d)",
                     _retry_count + 1, _MAX_RETRIES,
@@ -295,12 +321,13 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
                 )
                 time.sleep(backoff)
             else:
-                # Exhausted retries — lock out permanently
-                _init_attempted = True
+                # Exhausted retries — transient lock with TTL (F-09 fix)
+                _locked_at = time.monotonic()
+                _is_permanent = False
                 logger.warning(
                     "Transient init failures exhausted %d retries — "
-                    "factory locked. Call reset() or restart to retry.",
-                    _MAX_RETRIES,
+                    "factory locked for %ds. Auto-retry after expiry or call reset().",
+                    _MAX_RETRIES, _TRANSIENT_TTL,
                 )
 
         return None
@@ -312,7 +339,7 @@ def reset() -> None:
     Also stops the AuthProxy daemon if one was registered by
     _10_start_auth_proxy (stored in the module-level _proxy_instance).
     """
-    global _manager, _init_attempted, _retry_count, _proxy_instance
+    global _manager, _locked_at, _is_permanent, _retry_count, _proxy_instance
     with _init_lock:
         # Stop the auth proxy daemon if one is running
         if _proxy_instance is not None:
@@ -324,7 +351,8 @@ def reset() -> None:
             _proxy_instance = None
 
         _manager = None
-        _init_attempted = False
+        _locked_at = 0.0
+        _is_permanent = False
         _retry_count = 0
 
 
