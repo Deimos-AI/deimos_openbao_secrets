@@ -128,7 +128,7 @@ class InstallStatus:
                     status["vault_secret_keys"] = registry.get("vault_secret_keys", [])
                     status["vault_secrets_count"] = len(status["vault_secret_keys"])
                     status["awaiting_confirmation"] = (
-                        discovery_status == "discovered"
+                        discovery_status == "discovered"  # CR-3: 'deferred' does NOT await confirmation
                     )
                 elif status["secrets_count"] > 0:
                     # Secrets exist but no discovery_status set — fresh install

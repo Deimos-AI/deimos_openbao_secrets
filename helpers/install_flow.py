@@ -617,10 +617,10 @@ def apply_core_patch() -> Dict[str, Any]:
         result["output"] = "Patch already applied — skipping"
         return result
 
-    patch_script = Path("/a0/usr/projects/deimos-openbao-project/patch_core.py")
-    if not patch_script.exists():
-        # Try alternate location
-        patch_script = Path(__file__).parent.parent.parent / "patch_core.py"
+    # CR-5: Use portable relative path — Path(__file__).parent.parent.parent resolves
+    # to the project root (3 levels up from helpers/) where patch_core.py lives.
+    # Removed env-specific hardcoded /a0/usr/projects/... primary path.
+    patch_script = Path(__file__).parent.parent.parent / "patch_core.py"
 
     if not patch_script.exists():
         result["error"] = "patch_core.py not found — skipping core patch"

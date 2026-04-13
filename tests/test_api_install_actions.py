@@ -152,8 +152,8 @@ class TestDeferPropagation:
         mock_rm.save.assert_called_once()
         saved = mock_rm.save.call_args[0][0]
         assert "deferred_at" in saved
-        # Discovery status stays 'discovered'
-        assert saved["discovery_status"] == "discovered"
+        # CR-3: discovery_status is now 'deferred' (not 'discovered') so gate hides after skip
+        assert saved["discovery_status"] == "deferred"
 
     def test_defer_no_pending_discovery(self):
         """Defer when no pending discovery returns error."""

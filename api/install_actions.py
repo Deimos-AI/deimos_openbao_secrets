@@ -104,10 +104,11 @@ class InstallActions:
         return result
 
     async def _defer_propagation(self) -> Dict[str, Any]:
-        """Defer propagation — keep discovery status as 'discovered'.
+        """Defer propagation — marks discovery as deferred.
 
-        Marks discovery as explicitly deferred so the user isn't prompted
-        again until they manually trigger propagation.
+        Sets discovery_status to 'deferred' so awaiting_confirmation
+        becomes False and the gate does not re-appear on next page load.
+        User can re-trigger propagation manually later.
 
         Satisfies: E-08-ext AC-D5
         """
@@ -128,8 +129,10 @@ class InstallActions:
                 result["errors"] = [f"No pending discovery to defer (status={discovery_status})"]
                 return result
 
-            # Mark as deferred — stays in 'discovered' status
-            # but awaiting_confirmation becomes false via deferred_at timestamp
+            # CR-3: Set discovery_status='deferred' so awaiting_confirmation is False.
+            # Previously only set deferred_at — leaving status='discovered' meant the
+            # gate would re-appear on next page load (skip button non-functional).
+            registry["discovery_status"] = "deferred"
             registry["deferred_at"] = _now_iso()
             rm.save(registry)
 
@@ -142,6 +145,7 @@ class InstallActions:
             logger.error("install_actions defer-propagation failed: %s", exc)
 
         return result
+
 
 
 def _now_iso() -> str:

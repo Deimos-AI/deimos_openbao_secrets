@@ -60,6 +60,7 @@ logger = logging.getLogger(__name__)
 
 # Module-level singleton -- shared across all three factory extensions
 _init_lock = threading.Lock()
+_manager: "Optional[SecretsManager]" = None  # CR-1: must be at module level for NameError-free first call
 _locked_at: float = 0.0  # monotonic timestamp when factory was locked (0 = unlocked)
 _is_permanent: bool = False  # True = permanent lock (deps missing, plugin disabled)
 _retry_count = 0
@@ -289,6 +290,12 @@ def get_openbao_manager() -> Optional["SecretsManager"]:
             return _manager
         if _is_locked():
             return None
+
+        # CR-2: If TTL expired, _retry_count is still at _MAX_RETRIES and the while
+        # loop below would never run. Reset both so auto-retry actually executes.
+        if _locked_at != 0.0 and not _is_permanent:
+            _locked_at = 0.0
+            _retry_count = 0
 
         while _retry_count < _MAX_RETRIES:
             manager, is_permanent = _attempt_init()

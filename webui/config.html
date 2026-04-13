@@ -1331,7 +1331,13 @@ async function checkDiscoveryGate() {
         document.getElementById('discovery-title').textContent =
             '\uD83D\uDD11 ' + s.vault_secrets_count + ' pre-existing secrets found in vault';
         const keyList = document.getElementById('discovery-key-list');
-        keyList.innerHTML = '<code>' + (s.vault_secret_keys || []).join('</code> &middot; <code>') + '</code>';
+        keyList.innerHTML = '';
+        (s.vault_secret_keys || []).forEach(function(k) {
+            var code = document.createElement('code');
+            code.textContent = k;  // CR-4: textContent not innerHTML — prevents XSS via malicious key names
+            keyList.appendChild(code);
+            keyList.appendChild(document.createTextNode(' · '));
+        });
         gateDiv.style.display = 'block';
     } catch (err) {
         gateDiv.style.display = 'none';
