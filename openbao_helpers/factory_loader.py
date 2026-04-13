@@ -53,7 +53,7 @@ def _get_openbao_manager():
     if not plugin_dir:
         return None
 
-    fc_path = os.path.join(plugin_dir, "helpers", "factory_common.py")
+    fc_path = os.path.join(plugin_dir, "openbao_helpers", "factory_common.py")
     if not os.path.exists(fc_path):
         return None
 

@@ -168,7 +168,7 @@ def _attempt_init() -> Tuple[Optional["SecretsManager"], bool]:
             return None, True  # permanent — plugin not installed
 
         # Load and validate config
-        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        config_path = os.path.join(plugin_dir, "openbao_helpers", "config.py")
         spec = importlib.util.spec_from_file_location("openbao_config", config_path)
         if spec is None:
             logger.warning("Could not load config module from %s", config_path)
@@ -194,7 +194,7 @@ def _attempt_init() -> Tuple[Optional["SecretsManager"], bool]:
             return None, False  # F-09: transient — env vars may not be propagated yet
 
         # Load the client module
-        client_path = os.path.join(plugin_dir, "helpers", "openbao_client.py")
+        client_path = os.path.join(plugin_dir, "openbao_helpers", "openbao_client.py")
         spec_client = importlib.util.spec_from_file_location("openbao_client", client_path)
         if spec_client is None:
             logger.warning("Could not load client module from %s", client_path)
@@ -209,7 +209,7 @@ def _attempt_init() -> Tuple[Optional["SecretsManager"], bool]:
             return None, False  # transient
 
         # Load the manager module
-        manager_path = os.path.join(plugin_dir, "helpers", "openbao_secrets_manager.py")
+        manager_path = os.path.join(plugin_dir, "openbao_helpers", "openbao_secrets_manager.py")
         spec_mgr = importlib.util.spec_from_file_location("openbao_manager", manager_path)
         if spec_mgr is None:
             logger.warning("Could not load manager module from %s", manager_path)
