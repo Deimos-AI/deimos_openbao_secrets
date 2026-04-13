@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 import types
 from unittest.mock import MagicMock, patch, PropertyMock
 
@@ -805,3 +806,105 @@ class TestBootstrapVaultFork:
         mock_install.register_discovered_secrets.assert_called_once()
         result = mock_install.register_discovered_secrets.return_value
         assert result["skipped"] == 1
+
+
+# ===========================================================================
+# E-08: Prompt symlink tests
+# ===========================================================================
+
+class TestEnsurePromptSymlink:
+    """Test ensure_prompt_symlink creates symlink correctly."""
+
+    _LINK = "/a0/usr/prompts/agent.system.secrets.md"
+
+    @staticmethod
+    def _mk_exists(link_value: bool):
+        """Return a plain function to replace Path.exists via new=.
+
+        ``patch.object(Path, 'exists', new=fn)`` installs a real function
+        (a descriptor), so ``p.exists()`` correctly receives the Path
+        instance as the first positional argument — unlike ``side_effect``
+        which wraps in a Mock that drops the self parameter.
+        """
+        _real = Path.exists
+        def _fn(p):
+            if str(p) == TestEnsurePromptSymlink._LINK:
+                return link_value
+            return _real(p)
+        return _fn
+
+    # ----- tests -----
+
+    def test_symlink_created_when_target_absent(self):
+        """Symlink created when no file or symlink exists at link path."""
+        with patch.object(Path, "exists", new=self._mk_exists(False)), \
+             patch.object(Path, "is_symlink", return_value=False), \
+             patch.object(Path, "mkdir"), \
+             patch("os.symlink") as mock_symlink:
+            result = inf.ensure_prompt_symlink()
+
+        assert result["symlinked"] is True
+        assert result["error"] is None
+        mock_symlink.assert_called_once()
+
+    def test_symlink_skipped_when_already_correct(self):
+        """No-op when symlink already points to our prompt file."""
+        expected = str(
+            (Path(inf.__file__).resolve().parent.parent
+             / "prompts" / "agent.system.secrets.md").resolve()
+        )
+        with patch.object(Path, "is_symlink", return_value=True), \
+             patch("os.readlink", return_value=expected):
+            result = inf.ensure_prompt_symlink()
+
+        assert result["symlinked"] is True
+        assert result["error"] is None
+
+    def test_symlink_skipped_when_foreign_file_exists(self):
+        """Does not overwrite a pre-existing non-symlink file."""
+        with patch.object(Path, "exists", new=self._mk_exists(True)), \
+             patch.object(Path, "is_symlink", return_value=False):
+            result = inf.ensure_prompt_symlink()
+
+        assert result["symlinked"] is False
+        assert "not overwriting" in result["error"]
+
+    def test_directory_created_when_missing(self):
+        """Parent directory /a0/usr/prompts/ is created if absent."""
+        with patch.object(Path, "exists", new=self._mk_exists(False)), \
+             patch.object(Path, "is_symlink", return_value=False), \
+             patch("os.symlink"), \
+             patch.object(Path, "mkdir") as mock_mkdir:
+            result = inf.ensure_prompt_symlink()
+
+        assert result["symlinked"] is True
+        mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_idempotent_rerun(self):
+        """Second call after successful creation is a no-op (already correct)."""
+        expected = str(
+            (Path(inf.__file__).resolve().parent.parent
+             / "prompts" / "agent.system.secrets.md").resolve()
+        )
+        # First call: no symlink → create
+        with patch.object(Path, "exists", new=self._mk_exists(False)), \
+             patch.object(Path, "is_symlink", return_value=False), \
+             patch.object(Path, "mkdir"), \
+             patch("os.symlink"):
+            r1 = inf.ensure_prompt_symlink()
+        assert r1["symlinked"] is True
+
+        # Second call: symlink exists and points correctly → skip
+        with patch.object(Path, "is_symlink", return_value=True), \
+             patch("os.readlink", return_value=expected):
+            r2 = inf.ensure_prompt_symlink()
+        assert r2["symlinked"] is True
+        assert r2["error"] is None
+
+    def test_source_not_found(self):
+        """Returns error when source prompt does not exist."""
+        with patch.object(Path, "exists", return_value=False):
+            result = inf.ensure_prompt_symlink()
+
+        assert result["symlinked"] is False
+        assert "not found" in result["error"]
