@@ -18,7 +18,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _VAULT_IO_KEY = "deimos_openbao_secrets_vault_io"
-_CFG_KEY = "deimos_openbao_secrets_helpers_config"
+_CFG_KEY = "openbao_helpers.config"
 _PLUGIN_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 

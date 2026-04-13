@@ -1,4 +1,4 @@
-"""Test suite for helpers/install_flow.py — E-08 Evergreen Install Flow.
+"""Test suite for openbao_helpers/install_flow.py — E-08 Evergreen Install Flow.
 
 Acceptance criteria covered:
   AC-01  validate_connection: health check + auth verification
@@ -21,25 +21,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import helpers.install_flow as inf  # noqa: E402
+import openbao_helpers.install_flow as inf  # noqa: E402
 
-@pytest.fixture(autouse=True)
-def _clean_importlib_caches():
-    """Clean importlib cache keys between tests."""
-    import sys as _sys
-    _cache_keys = [k for k in list(_sys.modules.keys()) if k.startswith("deimos_openbao_secrets_helpers_")]
-    for k in _cache_keys:
-        _sys.modules.pop(k, None)
-    yield
-    _cache_keys = [k for k in list(_sys.modules.keys()) if k.startswith("deimos_openbao_secrets_helpers_")]
-    for k in _cache_keys:
-        _sys.modules.pop(k, None)
-
-
-
-# ===========================================================================
-# Mock config factory
-# ===========================================================================
+# _clean_importlib_caches removed — namespace collision resolved by renaming helpers/ to openbao_helpers/
 
 def _make_config(**overrides):
     """Create a mock OpenBaoConfig with sensible defaults."""
@@ -82,7 +66,7 @@ class TestValidateConnection:
             "sealed": False,
         }
 
-        with patch("helpers.openbao_client.OpenBaoClient", return_value=mock_client) as mock_cls:
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_client) as mock_cls:
             config = _make_config()
             result = inf.validate_connection(config)
 
@@ -100,7 +84,7 @@ class TestValidateConnection:
             "sealed": None,
         }
 
-        with patch("helpers.openbao_client.OpenBaoClient", return_value=mock_client):
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_client):
             result = inf.validate_connection(_make_config())
 
         assert result["connected"] is False
@@ -115,7 +99,7 @@ class TestValidateConnection:
             "sealed": False,
         }
 
-        with patch("helpers.openbao_client.OpenBaoClient", return_value=mock_client):
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_client):
             result = inf.validate_connection(_make_config())
 
         assert result["connected"] is True
@@ -131,7 +115,7 @@ class TestValidateConnection:
             "sealed": True,
         }
 
-        with patch("helpers.openbao_client.OpenBaoClient", return_value=mock_client):
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_client):
             result = inf.validate_connection(_make_config())
 
         assert result["sealed"] is True
@@ -139,7 +123,7 @@ class TestValidateConnection:
 
     def test_connection_exception(self):
         """Exception during connection returns error without crashing."""
-        with patch("helpers.openbao_client.OpenBaoClient", side_effect=ConnectionError("refused")):
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", side_effect=ConnectionError("refused")):
             result = inf.validate_connection(_make_config())
 
         assert result["connected"] is False
@@ -353,8 +337,8 @@ class TestBootstrapRegistry:
         mock_rm = MagicMock()
         mock_rm.load.return_value = {"version": 1, "entries": []}
 
-        with patch("helpers.registry.RegistryManager", return_value=mock_rm), \
-             patch("helpers.registry.RegistryEntry") as mock_entry_cls:
+        with patch("openbao_helpers.registry.RegistryManager", return_value=mock_rm), \
+             patch("openbao_helpers.registry.RegistryEntry") as mock_entry_cls:
             mock_entry = MagicMock()
             mock_entry.id = "test-id"
             mock_entry.to_dict.return_value = {"id": "test-id", "key": "API_KEY"}
@@ -377,8 +361,8 @@ class TestBootstrapRegistry:
             "entries": [{"id": "test-id", "key": "API_KEY"}],
         }
 
-        with patch("helpers.registry.RegistryManager", return_value=mock_rm), \
-             patch("helpers.registry.RegistryEntry") as mock_entry_cls:
+        with patch("openbao_helpers.registry.RegistryManager", return_value=mock_rm), \
+             patch("openbao_helpers.registry.RegistryEntry") as mock_entry_cls:
             mock_entry = MagicMock()
             mock_entry.id = "test-id"
             mock_entry_cls.return_value = mock_entry
@@ -394,7 +378,7 @@ class TestBootstrapRegistry:
 
     def test_registry_error(self):
         """Registry error returns error but doesn't crash."""
-        with patch("helpers.registry.RegistryManager", side_effect=Exception("no registry")):
+        with patch("openbao_helpers.registry.RegistryManager", side_effect=Exception("no registry")):
             result = inf.bootstrap_registry(_make_config(), seeded_keys=["KEY"])
 
         assert result["error"] is not None
@@ -410,7 +394,7 @@ class TestPatchCore:
 
     def test_should_apply_when_not_patched(self):
         """should_apply_core_patch returns True when patch not present."""
-        with patch("helpers.install_flow.Path") as mock_path_cls:
+        with patch("openbao_helpers.install_flow.Path") as mock_path_cls:
             mock_path = MagicMock()
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = "original content without patch"
@@ -421,7 +405,7 @@ class TestPatchCore:
 
     def test_should_not_apply_when_already_patched(self):
         """should_apply_core_patch returns False when already patched."""
-        with patch("helpers.install_flow.Path") as mock_path_cls:
+        with patch("openbao_helpers.install_flow.Path") as mock_path_cls:
             mock_path = MagicMock()
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = "some code hook_context={'caller': 'ui'} more code"
@@ -438,7 +422,7 @@ class TestPatchCore:
     def test_apply_core_patch_script_not_found(self):
         """Missing patch script is non-fatal."""
         with patch.object(inf, "should_apply_core_patch", return_value=True):
-            with patch("helpers.install_flow.Path") as mock_path:
+            with patch("openbao_helpers.install_flow.Path") as mock_path:
                 p1 = MagicMock()
                 p1.exists.return_value = False
                 p2 = MagicMock()
@@ -458,7 +442,7 @@ class TestPatchCore:
         mock_proc.stderr = ""
 
         with patch.object(inf, "should_apply_core_patch", return_value=True), \
-             patch("helpers.install_flow.Path") as mock_path, \
+             patch("openbao_helpers.install_flow.Path") as mock_path, \
              patch("subprocess.run", return_value=mock_proc) as mock_run:
             p1 = MagicMock()
             p1.exists.return_value = True
@@ -617,7 +601,7 @@ class TestRegisterDiscoveredSecrets:
         mock_registry_mod.RegistryManager.return_value = mock_rm
         mock_registry_mod.RegistryEntry = inf.RegistryEntry if hasattr(inf, 'RegistryEntry') else MagicMock()
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             result = inf.register_discovered_secrets(_make_config(), ["KEY1", "KEY2"])
 
         assert result["registered"] == 2
@@ -633,7 +617,7 @@ class TestRegisterDiscoveredSecrets:
 
     def test_skips_already_registered_keys(self):
         """Keys already in registry are skipped (idempotent)."""
-        from helpers.registry import RegistryEntry
+        from openbao_helpers.registry import RegistryEntry
         existing_id = RegistryEntry.make_id("vault_discovery", "existing_secrets", "KEY1")
 
         mock_rm = MagicMock()
@@ -645,7 +629,7 @@ class TestRegisterDiscoveredSecrets:
         mock_registry_mod.RegistryManager.return_value = mock_rm
         mock_registry_mod.RegistryEntry = RegistryEntry  # Use real class for correct IDs
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             result = inf.register_discovered_secrets(_make_config(), ["KEY1", "KEY2"])
 
         assert result["registered"] == 1  # KEY2 new, KEY1 skipped
@@ -666,12 +650,12 @@ class TestRegisterDiscoveredSecrets:
         mock_registry_mod.RegistryManager.return_value = mock_rm
         # Need real RegistryEntry for the loop
         try:
-            from helpers.registry import RegistryEntry as RE
+            from openbao_helpers.registry import RegistryEntry as RE
             mock_registry_mod.RegistryEntry = RE
         except Exception:
             pass
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             result = inf.register_discovered_secrets(_make_config(), ["KEY1"])
 
         assert result["error"] is not None
@@ -705,9 +689,9 @@ class TestBootstrapVaultFork:
         mock_plugins.find_plugin_dir.return_value = "/fake/dir"
 
         with patch.dict(sys.modules, {
-            "helpers.install_flow": mock_install,
-            "deimos_openbao_secrets_helpers_install_flow": mock_install,
-            "helpers.config": mock_config_mod,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
             hk._bootstrap_vault()
@@ -741,9 +725,9 @@ class TestBootstrapVaultFork:
         mock_plugins.find_plugin_dir.return_value = "/fake/dir"
 
         with patch.dict(sys.modules, {
-            "helpers.install_flow": mock_install,
-            "deimos_openbao_secrets_helpers_install_flow": mock_install,
-            "helpers.config": mock_config_mod,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
             hk._bootstrap_vault()
@@ -776,9 +760,9 @@ class TestBootstrapVaultFork:
         mock_plugins.find_plugin_dir.return_value = "/fake/dir"
 
         with patch.dict(sys.modules, {
-            "helpers.install_flow": mock_install,
-            "deimos_openbao_secrets_helpers_install_flow": mock_install,
-            "helpers.config": mock_config_mod,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
             hk._bootstrap_vault()
@@ -810,9 +794,9 @@ class TestBootstrapVaultFork:
         mock_plugins.find_plugin_dir.return_value = "/fake/dir"
 
         with patch.dict(sys.modules, {
-            "helpers.install_flow": mock_install,
-            "deimos_openbao_secrets_helpers_install_flow": mock_install,
-            "helpers.config": mock_config_mod,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
             hk._bootstrap_vault()

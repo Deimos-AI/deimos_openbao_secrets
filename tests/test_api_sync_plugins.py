@@ -34,10 +34,10 @@ def sync_mod():
     sys.modules.setdefault("helpers.plugins", MagicMock())
 
     mock_vio = MagicMock()
-    sys.modules["deimos_openbao_secrets_helpers_vault_io"] = mock_vio
+    sys.modules["openbao_helpers.vault_io"] = mock_vio
 
     mock_cfg_mod = MagicMock()
-    sys.modules.setdefault("deimos_openbao_secrets_helpers_config", mock_cfg_mod)
+    sys.modules.setdefault("openbao_helpers.config", mock_cfg_mod)
 
     path = os.path.join(os.path.dirname(__file__), "..", "api", "sync_plugins.py")
     spec = importlib.util.spec_from_file_location("api_secrets_sync", path)

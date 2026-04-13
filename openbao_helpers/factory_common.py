@@ -135,7 +135,7 @@ def _attempt_init() -> Tuple[Optional["SecretsManager"], bool]:
     """
     # --- Auto-install dependencies (hvac, tenacity, circuitbreaker) ---
     try:
-        from helpers.deps import ensure_dependencies as _ensure_deps
+        from openbao_helpers.deps import ensure_dependencies as _ensure_deps
     except ImportError:
         import importlib.util as _ilu
         _dp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deps.py")

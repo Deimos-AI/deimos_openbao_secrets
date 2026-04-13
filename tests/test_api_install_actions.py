@@ -25,10 +25,10 @@ def _run(coro):
 @pytest.fixture(autouse=True)
 def clean_sys_modules():
     """Clean deferred import modules between tests."""
-    for key in ("helpers.registry",):
+    for key in ("openbao_helpers.registry",):
         sys.modules.pop(key, None)
     yield
-    for key in ("helpers.registry",):
+    for key in ("openbao_helpers.registry",):
         sys.modules.pop(key, None)
 
 
@@ -49,7 +49,7 @@ class TestPropagate:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             request = MagicMock()
             request.path = "/api/plugins/deimos_openbao_secrets/install/propagate"
@@ -79,7 +79,7 @@ class TestPropagate:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler._propagate())
 
@@ -97,7 +97,7 @@ class TestPropagate:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler._propagate())
 
@@ -115,7 +115,7 @@ class TestPropagate:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler.process({"path": "/install/propagate"}))
 
@@ -139,7 +139,7 @@ class TestDeferPropagation:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             request = MagicMock()
             request.path = "/api/plugins/deimos_openbao_secrets/install/defer-propagation"
@@ -165,7 +165,7 @@ class TestDeferPropagation:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler._defer_propagation())
 
@@ -182,7 +182,7 @@ class TestDeferPropagation:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler._defer_propagation())
 
@@ -209,7 +209,7 @@ class TestRegistryEntryStatus:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler._propagate())
 
@@ -235,7 +235,7 @@ class TestRegistryEntryStatus:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler = InstallActions()
             result = _run(handler._defer_propagation())
 
@@ -268,7 +268,7 @@ class TestIdempotency:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler1 = InstallActions()
             r1 = _run(handler1._propagate())
 
@@ -298,7 +298,7 @@ class TestIdempotency:
         mock_registry_mod = MagicMock()
         mock_registry_mod.RegistryManager.return_value = mock_rm
 
-        with patch.dict(sys.modules, {"helpers.registry": mock_registry_mod}):
+        with patch.dict(sys.modules, {"openbao_helpers.registry": mock_registry_mod}):
             handler1 = InstallActions()
             r1 = _run(handler1._defer_propagation())
 

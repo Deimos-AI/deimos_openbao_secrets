@@ -132,7 +132,7 @@ def _load_vault_io():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "vault_io.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)
@@ -220,10 +220,10 @@ def _load_config_if_available():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        config_path = os.path.join(plugin_dir, "openbao_helpers", "config.py")
         if not os.path.exists(config_path):
             return None
-        _CFG_MODULE = "deimos_openbao_secrets_helpers_config"
+        _CFG_MODULE = "openbao_helpers.config"
         if _CFG_MODULE not in sys.modules:
             spec = importlib.util.spec_from_file_location(_CFG_MODULE, config_path)
             mod = importlib.util.module_from_spec(spec)

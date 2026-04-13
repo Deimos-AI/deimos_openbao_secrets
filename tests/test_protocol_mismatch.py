@@ -24,8 +24,8 @@ from unittest.mock import MagicMock, patch, call
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from helpers.config import OpenBaoConfig
-from helpers.openbao_client import OpenBaoClient, PERMANENT_ERRORS, _PROTOCOL_MISMATCH_MARKERS
+from openbao_helpers.config import OpenBaoConfig
+from openbao_helpers.openbao_client import OpenBaoClient, PERMANENT_ERRORS, _PROTOCOL_MISMATCH_MARKERS
 
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -96,7 +96,7 @@ class TestProtocolMismatchDetection:
     """AC-01: Protocol mismatch caught during _connect(), single error
     logged, _client set to None."""
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_ssl_error_in_probe_sets_client_none(self, mock_hvac_cls, base_config):
         """AC-01: ssl.SSLError during health probe kills client."""
         mock_client = MagicMock()
@@ -109,7 +109,7 @@ class TestProtocolMismatchDetection:
         assert client._client is None  # AC-01: decisively killed
         assert not client.is_connected()  # AC-01
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_ssl_error_logs_single_protocol_message(self, mock_hvac_cls, base_config, caplog):
         """AC-01: Single clear 'Protocol mismatch' log on SSL error."""
         mock_client = MagicMock()
@@ -118,7 +118,7 @@ class TestProtocolMismatchDetection:
         )
         mock_hvac_cls.return_value = mock_client
 
-        with caplog.at_level(logging.ERROR, logger="helpers.openbao_client"):
+        with caplog.at_level(logging.ERROR, logger="openbao_helpers.openbao_client"):
             client = OpenBaoClient(base_config)  # AC-01
 
         protocol_errors = [
@@ -127,7 +127,7 @@ class TestProtocolMismatchDetection:
         ]
         assert len(protocol_errors) >= 1  # AC-01: at least one clear message
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_protocol_mismatch_string_detection(self, mock_hvac_cls, base_config):
         """AC-01: Non-SSLError with protocol mismatch string also kills client."""
         mock_client = MagicMock()
@@ -140,7 +140,7 @@ class TestProtocolMismatchDetection:
         assert client._client is None  # AC-01: killed by string detection
         assert not client.is_connected()
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_non_protocol_connection_error_allows_retry(self, mock_hvac_cls, base_config):
         """AC-01: Regular ConnectionError during probe does NOT kill client."""
         mock_client = MagicMock()
@@ -175,7 +175,7 @@ class TestPermanentErrorClassification:
         markers_lower = [m.lower() for m in _PROTOCOL_MISMATCH_MARKERS]
         assert any("http" in m and "https" in m for m in markers_lower)  # AC-02
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_ssl_error_in_fetch_raises_runtime_not_retried(self, mock_hvac_cls, base_config):
         """AC-02: SSLError in _fetch() raises RuntimeError (not in TRANSIENT_ERRORS)."""
         mock_client = MagicMock()
@@ -198,7 +198,7 @@ class TestPermanentErrorClassification:
         with pytest.raises(RuntimeError, match="Protocol mismatch"):  # AC-02
             client.read_all_secrets()
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_no_retry_count_on_ssl_error(self, mock_hvac_cls, base_config):
         """AC-02: SSLError triggers exactly one read attempt, not retry cascade."""
         mock_client = MagicMock()
@@ -227,7 +227,7 @@ class TestPermanentErrorClassification:
 class TestFallbackBehavior:
     """AC-03: Agent Zero boots regardless — fallback to .env works."""
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_protocol_mismatch_client_not_connected(self, mock_hvac_cls, base_config):
         """AC-03: Protocol mismatch results in is_connected()=False."""
         mock_client = MagicMock()
@@ -239,7 +239,7 @@ class TestFallbackBehavior:
         client = OpenBaoClient(base_config)
         assert not client.is_connected()  # AC-03: not connected → fallback path
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_protocol_mismatch_no_exception_raised(self, mock_hvac_cls, base_config):
         """AC-03: Constructor does not raise — caller can proceed with fallback."""
         mock_client = MagicMock()
@@ -252,7 +252,7 @@ class TestFallbackBehavior:
         client = OpenBaoClient(base_config)  # AC-03: no exception
         assert client._client is None  # AC-03
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_health_check_returns_disconnected(self, mock_hvac_cls, base_config):
         """AC-03: health_check() on mismatched client returns disconnected."""
         mock_client = MagicMock()
@@ -277,7 +277,7 @@ class TestHardFailCleanError:
     state (single error, _client=None) that the manager can check.
     """
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_single_error_log_on_mismatch(self, mock_hvac_cls, base_config, caplog):
         """AC-04: Protocol mismatch produces exactly one error, not a cascade."""
         mock_client = MagicMock()
@@ -286,7 +286,7 @@ class TestHardFailCleanError:
         )
         mock_hvac_cls.return_value = mock_client
 
-        with caplog.at_level(logging.WARNING, logger="helpers.openbao_client"):
+        with caplog.at_level(logging.WARNING, logger="openbao_helpers.openbao_client"):
             client = OpenBaoClient(base_config)  # AC-04
 
         # Count error-level protocol messages — should be exactly 1
@@ -296,7 +296,7 @@ class TestHardFailCleanError:
         ]
         assert len(protocol_errors) == 1  # AC-04: single clean error
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_client_state_is_clean_after_mismatch(self, mock_hvac_cls, base_config):
         """AC-04: Client state is fully clean — no lingering references."""
         mock_client = MagicMock()
@@ -315,7 +315,7 @@ class TestHardFailCleanError:
 class TestAuthFailureKillsClient:
     """AC-05: is_authenticated() failure results in _client = None."""
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_auth_failure_sets_client_none(self, mock_hvac_cls, base_config):
         """AC-05: When is_authenticated() returns False, _client is set to None."""
         mock_client = MagicMock()
@@ -329,7 +329,7 @@ class TestAuthFailureKillsClient:
         client = OpenBaoClient(base_config)
         assert client._client is None  # AC-05: killed on auth failure
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_auth_failure_not_connected(self, mock_hvac_cls, base_config):
         """AC-05: Auth failure means is_connected() returns False."""
         mock_client = MagicMock()
@@ -343,7 +343,7 @@ class TestAuthFailureKillsClient:
         client = OpenBaoClient(base_config)
         assert not client.is_connected()  # AC-05
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_auth_failure_prevents_token_renewal_path(self, mock_hvac_cls, base_config):
         """AC-05: With _client=None, token renewal is a no-op (no cascade)."""
         mock_client = MagicMock()

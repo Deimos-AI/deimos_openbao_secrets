@@ -41,7 +41,7 @@ def _load_config_module():
     mod_name = "deimos_openbao_secrets_config_test"
     spec = importlib.util.spec_from_file_location(
         mod_name,
-        _PLUGIN_DIR / "helpers" / "config.py",
+        _PLUGIN_DIR / "openbao_helpers" / "config.py",
     )
     mod = importlib.util.module_from_spec(spec)
     sys.modules[mod_name] = mod  # required for Python 3.13 dataclass __module__ resolution

@@ -15,7 +15,7 @@ Notes on mock strategy:
   These are pre-injected into sys.modules by the fixture so that the
   function-local imports pick them up directly.
   vault_io is pre-injected under its cache key
-  'deimos_openbao_secrets_helpers_vault_io' to bypass find_plugin_dir.
+  'openbao_helpers.vault_io' to bypass find_plugin_dir.
 """
 import asyncio
 import importlib.util
@@ -31,7 +31,7 @@ def rotate_mod():
     """Load api/rotate_mcp.py with A0 runtime deps stubbed.
 
     vault_io is loaded by _load_vault_io() using the sys.modules cache key
-    _VAULT_IO_MODULE = 'deimos_openbao_secrets_helpers_vault_io'.
+    _VAULT_IO_MODULE = 'openbao_helpers.vault_io'.
     Pre-injecting that key bypasses the find_plugin_dir path lookup entirely.
     helpers.settings and helpers.mcp_handler are imported inside process().
 
@@ -50,7 +50,7 @@ def rotate_mod():
 
     # Pre-inject vault_io under its cache key so _load_vault_io() returns it
     mock_vault_io = MagicMock()
-    sys.modules["deimos_openbao_secrets_helpers_vault_io"] = mock_vault_io
+    sys.modules["openbao_helpers.vault_io"] = mock_vault_io
 
     # helpers.settings — get_settings() called inside process()
     sys.modules.setdefault("helpers.settings", MagicMock())

@@ -4,17 +4,17 @@ to be importable outside the A0 runtime.
 BOOTSTRAP ORDER IS CRITICAL — each step depends on the previous:
 
     Step 1: sys.path  — plugin root on path
-    Step 2: helpers.config imported, registered as sys.modules['openbao_config']
-    Step 3: helpers.openbao_client imported (needs openbao_config already registered)
+    Step 2: openbao_helpers.config imported, registered as sys.modules['openbao_config']
+    Step 3: openbao_helpers.openbao_client imported (needs openbao_config already registered)
     Step 4: registered as sys.modules['openbao_client']
-    Step 5: helpers.secrets mock registered (needed by openbao_secrets_manager)
+    Step 5: helpers.secrets mock registered (A0 framework — needed by openbao_secrets_manager)
 
 The plugin's helpers/openbao_secrets_manager.py uses three bare-name imports
 that are only present in sys.modules when loaded via factory_common at runtime:
 
     from helpers.secrets import ...   (A0 core module — mocked here)
-    from openbao_config import ...    (helpers/config.py, alias set by factory_common)
-    from openbao_client import ...    (helpers/openbao_client.py, alias set by factory_common)
+    from openbao_config import ...    (openbao_helpers/config.py, alias set by factory_common)
+    from openbao_client import ...    (openbao_helpers/openbao_client.py, alias set by factory_common)
 """
 from __future__ import annotations
 
@@ -32,15 +32,15 @@ if _PLUGIN_ROOT not in sys.path:
 # ── Step 2: Import helpers.config and register as 'openbao_config' ────────
 # MUST happen before importing helpers.openbao_client (which does
 # `from openbao_config import OpenBaoConfig` at module level).
-import helpers.config as _config_mod  # noqa: E402
+import openbao_helpers.config as _config_mod  # noqa: E402
 sys.modules["openbao_config"] = _config_mod
 
-# ── Step 3+4: Now import helpers.openbao_client (openbao_config ready) ────
-import helpers.openbao_client as _client_mod  # noqa: E402
+# ── Step 3+4: Now import openbao_helpers.openbao_client (openbao_config ready) ────
+import openbao_helpers.openbao_client as _client_mod  # noqa: E402
 sys.modules.setdefault("openbao_client", _client_mod)
 
-# ── Step 5: Mock helpers.secrets (A0 core — absent outside A0 runtime) ────
-# openbao_secrets_manager.py does `from helpers.secrets import SecretsManager, ...`
+# ── Step 5: Mock helpers.secrets (A0 framework) (A0 core — absent outside A0 runtime) ────
+# openbao_secrets_manager.py does `from helpers.secrets import SecretsManager, ...` (A0 framework import — unchanged)
 # We provide a minimal compatible stand-in.  The test_openbao_manager.py
 # fixture-level mocks remain in control of specific behaviour under test.
 

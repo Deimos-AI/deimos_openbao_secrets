@@ -38,7 +38,7 @@ import requests
 # Plugin root must be on sys.path (conftest.py does this; belt-and-suspenders)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from helpers.auth_proxy import AuthProxy, PROVIDER_REGISTRY  # noqa: E402
+from openbao_helpers.auth_proxy import AuthProxy, PROVIDER_REGISTRY  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@ def proxy_against_mock(mock_upstream_port):
 
     proxy = AuthProxy()
     m_secret = patch.object(proxy, "_get_secret", return_value="test-real-key")
-    m_reg = patch("helpers.auth_proxy.PROVIDER_REGISTRY", patched_registry)
+    m_reg = patch("openbao_helpers.auth_proxy.PROVIDER_REGISTRY", patched_registry)
 
     m_secret.start()
     m_reg.start()

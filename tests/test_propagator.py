@@ -18,14 +18,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-_PROPAGATOR_MODULE = "deimos_openbao_secrets_helpers_propagator"
+_PROPAGATOR_MODULE = "openbao_helpers.propagator"
 
 
 @pytest.fixture(scope="module")
 def propagator_mod():
     """Load helpers/propagator.py dynamically."""
     plugin_root = os.path.join(os.path.dirname(__file__), "..")
-    path = os.path.join(plugin_root, "helpers", "propagator.py")
+    path = os.path.join(plugin_root, "openbao_helpers", "propagator.py")
     if not os.path.exists(path):
         pytest.skip("helpers/propagator.py not yet created")
     spec = importlib.util.spec_from_file_location(_PROPAGATOR_MODULE, path)

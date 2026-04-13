@@ -24,7 +24,7 @@ import pytest
 @pytest.fixture(scope="module")
 def config_mod():
     """Load helpers/config.py for testing."""
-    path = os.path.join(os.path.dirname(__file__), "..", "helpers", "config.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "openbao_helpers", "config.py")
     spec = importlib.util.spec_from_file_location("openbao_config_adv", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod  # Required for @dataclass in Python 3.13+
@@ -86,7 +86,7 @@ def manager_mod():
 
     path = os.path.join(
         os.path.dirname(__file__), "..",
-        "helpers", "openbao_secrets_manager.py",
+        "openbao_helpers", "openbao_secrets_manager.py",
     )
     spec = importlib.util.spec_from_file_location("openbao_mgr_adv", path)
     mod = importlib.util.module_from_spec(spec)
@@ -103,7 +103,7 @@ def api_secrets_mod():
     mock_api.Response = MagicMock
     sys.modules.setdefault("helpers.api", mock_api)
     sys.modules.setdefault("helpers.plugins", MagicMock())
-    sys.modules["deimos_openbao_secrets_helpers_vault_io"] = MagicMock()
+    sys.modules["openbao_helpers.vault_io"] = MagicMock()
 
     path = os.path.join(os.path.dirname(__file__), "..", "api", "sync_plugins.py")
     spec = importlib.util.spec_from_file_location("api_sync_plugins_adv", path)

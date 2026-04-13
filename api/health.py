@@ -16,14 +16,14 @@ from helpers.api import ApiHandler, Request, Response
 # ---------------------------------------------------------------------------
 # Plugin helper bootstrap — load helpers/config.py via importlib.util.
 # A0's importmodule() loads api/ files without plugin root on sys.path.
-# `from helpers.config import load_config` resolves to A0's /a0/helpers/
+# `from openbao_helpers.config import load_config` resolves to A0's /a0/helpers/
 # which has no config.py → ModuleNotFoundError → Flask 500 HTML response
 # → browser JSON.parse fails: "Unexpected token '<', <!doctype ..."
 # Fix: use find_plugin_dir() (A0 helpers.plugins — always safe) to resolve
 # the path at runtime and load via importlib.util with a unique module key.
 # Shares the same sys.modules cache key as api/secrets.py — one exec per process.
 # ---------------------------------------------------------------------------
-_PLUGIN_CFG_MODULE = "deimos_openbao_secrets_helpers_config"
+_PLUGIN_CFG_MODULE = "openbao_helpers.config"
 
 
 def _get_config_module():
@@ -33,7 +33,7 @@ def _get_config_module():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             raise ImportError("deimos_openbao_secrets plugin dir not found via find_plugin_dir()")
-        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        config_path = os.path.join(plugin_dir, "openbao_helpers", "config.py")
         if not os.path.exists(config_path):
             raise ImportError(f"helpers/config.py not found at: {config_path}")
         spec = importlib.util.spec_from_file_location(_PLUGIN_CFG_MODULE, config_path)

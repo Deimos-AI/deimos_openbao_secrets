@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from helpers.config import OpenBaoConfig
-from helpers.openbao_client import OpenBaoClient, _TTLCache, TRANSIENT_ERRORS
+from openbao_helpers.config import OpenBaoConfig
+from openbao_helpers.openbao_client import OpenBaoClient, _TTLCache, TRANSIENT_ERRORS
 
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -129,14 +129,14 @@ class TestTTLCache:
 # ── Connection Tests ──────────────────────────────────────────
 
 class TestConnection:
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_connect_with_token(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
         assert client.is_connected()
         assert mock_hvac_client.token == "hvs.test-token"
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_connect_with_approle(self, mock_hvac_cls, approle_config, mock_hvac_client, monkeypatch):
         monkeypatch.delenv("OPENBAO_ROLE_ID", raising=False)
         monkeypatch.setenv("OPENBAO_SECRET_ID", "test-secret-id")
@@ -151,13 +151,13 @@ class TestConnection:
             secret_id="test-secret-id",
         )
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_connect_failure_sets_client_none(self, mock_hvac_cls, base_config):
         mock_hvac_cls.side_effect = ConnectionError("refused")
         client = OpenBaoClient(base_config)
         assert not client.is_connected()
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_is_connected_false_when_not_authenticated(self, mock_hvac_cls, base_config):
         mock_client = MagicMock()
         mock_client.is_authenticated.return_value = False
@@ -170,14 +170,14 @@ class TestConnection:
 # ── Read Tests ────────────────────────────────────────────────
 
 class TestRead:
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_read_all_secrets(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
         secrets = client.read_all_secrets()
         assert secrets == {"API_KEY": "sk-test-123", "DB_PASSWORD": "secret-pw"}
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_read_all_secrets_uppercases_keys(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_client.secrets.kv.v2.read_secret_version.return_value = {
             "data": {"data": {"lower_key": "value"}}
@@ -187,14 +187,14 @@ class TestRead:
         secrets = client.read_all_secrets()
         assert "LOWER_KEY" in secrets
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_read_single_secret(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
         assert client.read_secret("api_key") == "sk-test-123"
         assert client.read_secret("nonexistent") is None
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_read_returns_empty_on_none_response(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_client.secrets.kv.v2.read_secret_version.return_value = None
         mock_hvac_cls.return_value = mock_hvac_client
@@ -207,7 +207,7 @@ class TestRead:
 # ── Cache Tests ───────────────────────────────────────────────
 
 class TestCaching:
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_second_read_uses_cache(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
@@ -219,7 +219,7 @@ class TestCaching:
         # KV read should only be called once
         assert mock_hvac_client.secrets.kv.v2.read_secret_version.call_count == 1
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_invalidate_forces_refetch(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
@@ -232,7 +232,7 @@ class TestCaching:
 # ── Health Check Tests ────────────────────────────────────────
 
 class TestHealthCheck:
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_health_check_returns_status(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
@@ -242,7 +242,7 @@ class TestHealthCheck:
         assert health["initialized"] is True
         assert health["sealed"] is False
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_health_check_handles_failure(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_client.sys.read_health_status.side_effect = ConnectionError("down")
         mock_hvac_cls.return_value = mock_hvac_client
@@ -251,7 +251,7 @@ class TestHealthCheck:
         assert health["connected"] is False
 
     def test_health_check_no_client(self, base_config):
-        with patch("helpers.openbao_client.hvac.Client") as mock_cls:
+        with patch("openbao_helpers.openbao_client.hvac.Client") as mock_cls:
             mock_cls.side_effect = ConnectionError("refused")
             client = OpenBaoClient(base_config)
         health = client.health_check()
@@ -262,14 +262,14 @@ class TestHealthCheck:
 # ── Close/Repr Tests ──────────────────────────────────────────
 
 class TestLifecycle:
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_close(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)
         client.close()
         assert not client.is_connected()
 
-    @patch("helpers.openbao_client.hvac.Client")
+    @patch("openbao_helpers.openbao_client.hvac.Client")
     def test_repr(self, mock_hvac_cls, base_config, mock_hvac_client):
         mock_hvac_cls.return_value = mock_hvac_client
         client = OpenBaoClient(base_config)

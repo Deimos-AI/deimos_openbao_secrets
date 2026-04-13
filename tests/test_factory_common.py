@@ -39,7 +39,7 @@ import pytest
 # Belt-and-suspenders: conftest.py handles sys.path, but be explicit
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import helpers.factory_common as fc  # noqa: E402
+import openbao_helpers.factory_common as fc  # noqa: E402
 
 
 # ===========================================================================
@@ -132,7 +132,7 @@ def _happy_path():
     mock_plugins.find_plugin_dir.return_value = _FAKE_PLUGIN_DIR
 
     with patch.dict(sys.modules, {
-        "helpers.deps": mock_deps,
+        "openbao_helpers.deps": mock_deps,
         "helpers.plugins": mock_plugins,
     }):
         with patch(
@@ -180,7 +180,7 @@ def deps_fail():
     # helpers.plugins mock is defensive — ensure_dependencies=False causes
     # early return before helpers.plugins is ever imported.
     with patch.dict(sys.modules, {
-        "helpers.deps": mock_deps,
+        "openbao_helpers.deps": mock_deps,
         "helpers.plugins": MagicMock(),
     }):
         yield mock_deps
@@ -295,7 +295,7 @@ class TestResetBasedRetry:
         mock_fail_deps = MagicMock()
         mock_fail_deps.ensure_dependencies.return_value = False
         with patch.dict(sys.modules, {
-            "helpers.deps": mock_fail_deps,
+            "openbao_helpers.deps": mock_fail_deps,
             "helpers.plugins": MagicMock(),
         }):
             r1 = fc.get_openbao_manager()
@@ -332,7 +332,7 @@ class TestResetClearsState:
         mock_fail = MagicMock()
         mock_fail.ensure_dependencies.return_value = False
         with patch.dict(sys.modules, {
-            "helpers.deps": mock_fail,
+            "openbao_helpers.deps": mock_fail,
             "helpers.plugins": MagicMock(),
         }):
             fc.get_openbao_manager()
@@ -524,7 +524,7 @@ class TestTransientLockoutTTL:
         fc._MAX_RETRIES = 1
         try:
             with patch.dict(sys.modules, {
-                "helpers.deps": mock_deps,
+                "openbao_helpers.deps": mock_deps,
                 "helpers.plugins": mock_plugins,
             }):
                 with patch("importlib.util.spec_from_file_location") as mock_spec:
@@ -545,7 +545,7 @@ class TestTransientLockoutTTL:
         mock_deps = MagicMock()
         mock_deps.ensure_dependencies.return_value = False
         with patch.dict(sys.modules, {
-            "helpers.deps": mock_deps,
+            "openbao_helpers.deps": mock_deps,
             "helpers.plugins": MagicMock(),
         }):
             fc.get_openbao_manager()

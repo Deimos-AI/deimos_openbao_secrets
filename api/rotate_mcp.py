@@ -36,14 +36,14 @@ from helpers.api import ApiHandler, Request, Response
 # ---------------------------------------------------------------------------
 # Plugin helper bootstrap — load helpers/vault_io.py via importlib.util.
 # A0's importmodule() loads api/ files without plugin root on sys.path.
-# `from helpers.vault_io import ...` resolves to A0's /a0/helpers/vault_io.py
+# `from openbao_helpers.vault_io import ...` resolves to A0's /a0/helpers/vault_io.py
 # which does NOT exist → ModuleNotFoundError → Flask 500 HTML response
 # → browser JSON.parse fails: "Unexpected token '<', <!doctype ..."
 # Fix: use find_plugin_dir() (A0's helpers.plugins — always safe) to resolve
 # the path at runtime and load via importlib.util with a unique module key.
 # sys.modules caching ensures exec_module is called only once per process.
 # ---------------------------------------------------------------------------
-_VAULT_IO_MODULE = "deimos_openbao_secrets_helpers_vault_io"
+_VAULT_IO_MODULE = "openbao_helpers.vault_io"
 
 
 def _load_vault_io():
@@ -53,7 +53,7 @@ def _load_vault_io():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "vault_io.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)

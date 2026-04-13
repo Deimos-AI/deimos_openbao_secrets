@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from helpers.config import OpenBaoConfig, load_config, validate_config
+from openbao_helpers.config import OpenBaoConfig, load_config, validate_config
 
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -301,7 +301,7 @@ class TestREM032SnakeCaseKeys:
         class Cap(logging.Handler):
             def emit(self, rec): warnings_seen.append(self.format(rec))
         handler = Cap()
-        log = logging.getLogger("helpers.config")
+        log = logging.getLogger("openbao_helpers.config")
         log.addHandler(handler)
         old_level = log.level
         log.setLevel(logging.WARNING)
@@ -337,7 +337,7 @@ class TestREM032SnakeCaseKeys:
         class Cap(logging.Handler):
             def emit(self, rec): warnings_seen.append(self.format(rec))
         handler = Cap()
-        log = logging.getLogger("helpers.config")
+        log = logging.getLogger("openbao_helpers.config")
         log.addHandler(handler)
         old_level = log.level
         log.setLevel(logging.WARNING)
@@ -371,7 +371,7 @@ class TestREM032SnakeCaseKeys:
         class Cap(logging.Handler):
             def emit(self, rec): warnings_seen.append(self.format(rec))
         handler = Cap()
-        log = logging.getLogger("helpers.config")
+        log = logging.getLogger("openbao_helpers.config")
         log.addHandler(handler)
         old_level = log.level
         log.setLevel(logging.WARNING)

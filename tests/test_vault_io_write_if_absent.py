@@ -19,7 +19,7 @@ import pytest
 @pytest.fixture(scope="module")
 def vio_mod():
     """Load helpers/vault_io.py directly via importlib — no stubs required."""
-    path = os.path.join(os.path.dirname(__file__), "..", "helpers", "vault_io.py")
+    path = os.path.join(os.path.dirname(__file__), "..", "openbao_helpers", "vault_io.py")
     spec = importlib.util.spec_from_file_location("test_vault_io", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

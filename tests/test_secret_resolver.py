@@ -179,7 +179,7 @@ class TestResolveSecret:
 
     def test_resolve_secret_openbao_available_returns_real_value(self, monkeypatch):
         """AC-01/AC-05: OpenBao returns real value; sentinel never leaked."""
-        import helpers.factory_common as fc
+        import openbao_helpers.factory_common as fc
         from unittest.mock import MagicMock
 
         mock_mgr = MagicMock()
@@ -194,7 +194,7 @@ class TestResolveSecret:
 
     def test_resolve_secret_openbao_unavailable_falls_back_to_env(self, monkeypatch):
         """AC-03: OpenBao returns None => os.environ fallback; sentinel never leaked."""
-        import helpers.factory_common as fc
+        import openbao_helpers.factory_common as fc
         from unittest.mock import MagicMock
 
         mock_mgr = MagicMock()
@@ -209,7 +209,7 @@ class TestResolveSecret:
 
     def test_resolve_secret_key_absent_returns_none(self, monkeypatch):
         """AC-04: Key absent from both OpenBao and os.environ => None."""
-        import helpers.factory_common as fc
+        import openbao_helpers.factory_common as fc
         from unittest.mock import MagicMock
 
         mock_mgr = MagicMock()

@@ -13,8 +13,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-import helpers.registry as reg_mod
-from helpers.registry import RegistryEntry, RegistryManager
+import openbao_helpers.registry as reg_mod
+from openbao_helpers.registry import RegistryEntry, RegistryManager
 
 
 # ---------------------------------------------------------------------------

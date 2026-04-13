@@ -46,11 +46,11 @@ print("BOOTSTRAP")
 print("=" * 64)
 
 fc = _load_module(FC_MODULE_NAME,
-                  os.path.join(PLUGIN_DIR, "helpers", "factory_common.py"))
+                  os.path.join(PLUGIN_DIR, "openbao_helpers", "factory_common.py"))
 print("  factory_common : loaded")
 
 proxy_mod = _load_module("openbao_auth_proxy",
-                         os.path.join(PLUGIN_DIR, "helpers", "auth_proxy.py"))
+                         os.path.join(PLUGIN_DIR, "openbao_helpers", "auth_proxy.py"))
 print("  auth_proxy     : loaded")
 
 print("  Starting AuthProxy (binds 127.0.0.1:0)...")

@@ -36,7 +36,7 @@ def _load_openbao_manager():
     if not plugin_dir:
         return None
 
-    fl_path = os.path.join(plugin_dir, "helpers", "factory_loader.py")
+    fl_path = os.path.join(plugin_dir, "openbao_helpers", "factory_loader.py")
     if not os.path.exists(fl_path):
         return None
 

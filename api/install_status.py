@@ -64,7 +64,7 @@ class InstallStatus:
         }
 
         try:
-            from helpers.config import load_config
+            from openbao_helpers.config import load_config
             from helpers.plugins import find_plugin_dir
             plugin_dir = find_plugin_dir("deimos_openbao_secrets")
             if not plugin_dir:
@@ -78,7 +78,7 @@ class InstallStatus:
 
             # Check connectivity via OpenBaoClient health_check
             try:
-                from helpers.openbao_client import OpenBaoClient
+                from openbao_helpers.openbao_client import OpenBaoClient
                 client = OpenBaoClient(config)
                 health = client.health_check()
                 status["connected"] = health.get("connected", False)
@@ -115,7 +115,7 @@ class InstallStatus:
 
             # Check registry — includes discovery metadata
             try:
-                from helpers.registry import RegistryManager
+                from openbao_helpers.registry import RegistryManager
                 rm = RegistryManager()
                 registry = rm.load()
                 status["registry_count"] = len(registry.get("entries", []))

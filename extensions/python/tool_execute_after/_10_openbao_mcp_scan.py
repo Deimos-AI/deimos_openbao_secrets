@@ -88,7 +88,7 @@ def _load_vault_io():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "vault_io.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)

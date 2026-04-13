@@ -33,7 +33,7 @@ _PLUGIN_DIR = Path(__file__).resolve().parent.parent
 def _load_config_module():
     spec = importlib.util.spec_from_file_location(
         "deimos_openbao_secrets_config_k8s_test",
-        _PLUGIN_DIR / "helpers" / "config.py",
+        _PLUGIN_DIR / "openbao_helpers" / "config.py",
     )
     mod = importlib.util.module_from_spec(spec)
     sys.modules["deimos_openbao_secrets_config_k8s_test"] = mod  # register before exec (circular import guard)
@@ -47,7 +47,7 @@ def _load_client_module():
     sys.modules["openbao_config"] = config_mod
     spec = importlib.util.spec_from_file_location(
         "openbao_client_k8s_test",
-        _PLUGIN_DIR / "helpers" / "openbao_client.py",
+        _PLUGIN_DIR / "openbao_helpers" / "openbao_client.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

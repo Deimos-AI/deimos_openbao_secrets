@@ -64,7 +64,7 @@ class InstallActions:
         }
 
         try:
-            from helpers.registry import RegistryManager
+            from openbao_helpers.registry import RegistryManager
             rm = RegistryManager()
             registry = rm.load()
 
@@ -120,7 +120,7 @@ class InstallActions:
         }
 
         try:
-            from helpers.registry import RegistryManager
+            from openbao_helpers.registry import RegistryManager
             rm = RegistryManager()
             registry = rm.load()
 

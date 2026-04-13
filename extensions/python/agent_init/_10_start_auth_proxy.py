@@ -107,7 +107,7 @@ class StartAuthProxy(Extension):
             if not plugin_dir:
                 return None
 
-            path = os.path.join(plugin_dir, "helpers", "auth_proxy.py")
+            path = os.path.join(plugin_dir, "openbao_helpers", "auth_proxy.py")
             if not os.path.exists(path):
                 logger.warning("auth_proxy.py not found at %s", path)
                 return None

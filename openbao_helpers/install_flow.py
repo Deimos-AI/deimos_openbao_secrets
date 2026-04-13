@@ -1,4 +1,4 @@
-"""helpers/install_flow.py — Evergreen install flow helpers.
+"""openbao_helpers/install_flow.py — Evergreen install flow helpers.
 
 Provides connection validation, KV mount/path provisioning, and
 patch_core.py execution for the deimos_openbao_secrets plugin.
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import os
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -19,39 +18,10 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-_PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)  # plugin dir (1 up from helpers/)
+_PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)  # plugin dir (1 up from openbao_helpers/)
 
 
-def _load_plugin_module(module_name: str, filename: str):
-    """Load a plugin-internal module, avoiding namespace collision with /a0/helpers/.
-
-    Strategy:
-      1. Check unique cache key (idempotent on repeated calls).
-      2. Check normal `helpers.{name}` key — if present, use it.  This lets
-         test suites mock the normal import path and have it work.
-      3. Fall back to importlib direct file loading for production evergreen
-         where Python has cached /a0/helpers/ as the helpers package.
-    """
-    cache_key = f"deimos_openbao_secrets_helpers_{module_name}"
-    if cache_key in sys.modules:
-        return sys.modules[cache_key]
-
-    # Normal import — works when sys.path is correct (test environments)
-    normal_key = f"helpers.{module_name}"
-    if normal_key in sys.modules:
-        mod = sys.modules[normal_key]
-        sys.modules[cache_key] = mod
-        return mod
-
-    # Direct file loading — production evergreen fallback
-    file_path = os.path.join(_PLUGIN_ROOT, "helpers", filename)
-    spec = importlib.util.spec_from_file_location(cache_key, file_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load {filename} from plugin helpers/")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[cache_key] = mod
-    spec.loader.exec_module(mod)
-    return mod
+# _load_plugin_module removed — namespace collision resolved by renaming helpers/ to openbao_helpers/
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +54,8 @@ def validate_connection(config: Any) -> Dict[str, Any]:
     }
 
     try:
-        _obao_mod = _load_plugin_module("openbao_client", "openbao_client.py")
-        OpenBaoClient = _obao_mod.OpenBaoClient
+        from openbao_helpers.openbao_client import OpenBaoClient as _OpenBaoClient_cls
+        OpenBaoClient = _OpenBaoClient_cls
         client = OpenBaoClient(config)
         health = client.health_check()
         result["connected"] = health.get("connected", False)
@@ -382,9 +352,9 @@ def register_discovered_secrets(config: Any, keys: list[str]) -> Dict[str, Any]:
         return result
 
     try:
-        _reg_mod = _load_plugin_module("registry", "registry.py")
-        RegistryManager = _reg_mod.RegistryManager
-        RegistryEntry = _reg_mod.RegistryEntry
+        from openbao_helpers.registry import RegistryManager as _RegistryManager_cls, RegistryEntry as _RegistryEntry_cls
+        RegistryManager = _RegistryManager_cls
+        RegistryEntry = _RegistryEntry_cls
         from datetime import datetime, timezone
 
         rm = RegistryManager()
@@ -561,9 +531,9 @@ def bootstrap_registry(config: Any, seeded_keys: list[str] = None) -> Dict[str, 
         return result
 
     try:
-        _reg_mod = _load_plugin_module("registry", "registry.py")
-        RegistryManager = _reg_mod.RegistryManager
-        RegistryEntry = _reg_mod.RegistryEntry
+        from openbao_helpers.registry import RegistryManager as _RegistryManager_cls, RegistryEntry as _RegistryEntry_cls
+        RegistryManager = _RegistryManager_cls
+        RegistryEntry = _RegistryEntry_cls
         from datetime import datetime, timezone
 
         rm = RegistryManager()

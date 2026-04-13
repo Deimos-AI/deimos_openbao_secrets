@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Plugin config module loader (same pattern as sync_plugins.py)
 # ---------------------------------------------------------------------------
-_PLUGIN_CFG_MODULE = "deimos_openbao_secrets_helpers_config"
-_SCANNER_MODULE = "deimos_openbao_secrets_helpers_secrets_scanner"
-_REGISTRY_MODULE = "deimos_openbao_secrets_helpers_registry"
+_PLUGIN_CFG_MODULE = "openbao_helpers.config"
+_SCANNER_MODULE = "openbao_helpers.secrets_scanner"
+_REGISTRY_MODULE = "openbao_helpers.registry"
 
 # Plugin directory — resolved from this file's location
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent
@@ -40,7 +40,7 @@ def _get_config_module():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             raise ImportError("deimos_openbao_secrets plugin dir not found")
-        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        config_path = os.path.join(plugin_dir, "openbao_helpers", "config.py")
         if not os.path.exists(config_path):
             raise ImportError(f"helpers/config.py not found at: {config_path}")
         spec = importlib.util.spec_from_file_location(_PLUGIN_CFG_MODULE, config_path)
@@ -91,7 +91,7 @@ def _load_scanner():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "secrets_scanner.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "secrets_scanner.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_SCANNER_MODULE, path)
@@ -108,7 +108,7 @@ def _load_registry():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "registry.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "registry.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_REGISTRY_MODULE, path)

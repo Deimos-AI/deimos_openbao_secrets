@@ -2,7 +2,7 @@
 
 This suite guards against a recurring regression where the four OpenBao
 factory extension files are changed from importlib absolute-path loading
-to a direct `from helpers.factory_loader import ...` statement.
+to a direct `from openbao_helpers.factory_loader import ...` statement.
 
 Root cause of the regression:
   In the A0 runtime, `helpers` resolves to A0's own helpers package
@@ -20,7 +20,7 @@ Correct pattern (must be present in each extension file):
   find_plugin_dir(...)                          — runtime path resolver
 
 Forbidden pattern (must NOT appear in any extension file):
-  from helpers.factory_loader import           — breaks in A0 runtime
+  from openbao_helpers.factory_loader import           — breaks in A0 runtime
 
 Acceptance criteria:
   AC-01  All four factory extension files exist at expected paths.
@@ -95,7 +95,7 @@ FACTORY_EXTENSION_FILES: tuple[str, ...] = (
 )
 
 #: Import statement that MUST NOT appear in any factory extension file.
-FORBIDDEN_PATTERN = "from helpers.factory_loader import"
+FORBIDDEN_PATTERN = "from openbao_helpers.factory_loader import"
 
 #: Tokens that MUST be present in every factory extension file.
 REQUIRED_TOKENS = (
@@ -137,7 +137,7 @@ def test_extension_file_exists(path):
 def test_no_direct_helpers_factory_loader_import(path):
     """AC-02: No factory extension file contains the forbidden direct import.
 
-    `from helpers.factory_loader import` resolves to A0's own helpers
+    `from openbao_helpers.factory_loader import` resolves to A0's own helpers
     package at runtime, which has no factory_loader module.  The resulting
     ModuleNotFoundError is silently swallowed, breaking all secret resolution.
 

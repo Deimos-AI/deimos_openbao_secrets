@@ -97,7 +97,7 @@ class TestApiActions:
             mock_vio.return_value._get_manager.return_value = MagicMock()
             mock_prop_instance = MagicMock()
             mock_prop_instance.scan_targets.return_value = []
-            from helpers.propagator import PropagationResult
+            from openbao_helpers.propagator import PropagationResult
             mock_prop_instance.propagate.return_value = PropagationResult(
                 ok=True, propagated=0, skipped=0, errors=[], backups_created=[]
             )

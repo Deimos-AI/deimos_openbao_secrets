@@ -81,8 +81,8 @@ sys.modules.setdefault("python.helpers", _mock_python_helpers)
 sys.modules.setdefault("python.helpers.secrets", _mock_python_helpers_secrets)
 
 # Now we can import our module
-from helpers.config import OpenBaoConfig
-from helpers.openbao_secrets_manager import OpenBaoSecretsManager
+from openbao_helpers.config import OpenBaoConfig
+from openbao_helpers.openbao_secrets_manager import OpenBaoSecretsManager
 
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -165,7 +165,7 @@ def mock_bao_client_down():
 @pytest.fixture
 def manager_with_bao(base_config, mock_bao_client):
     """OpenBaoSecretsManager with mocked OpenBao client."""
-    with patch("helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client):
+    with patch("openbao_helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client):
         mgr = OpenBaoSecretsManager(base_config)
     return mgr
 
@@ -180,7 +180,7 @@ def manager_disabled(disabled_config):
 @pytest.fixture
 def manager_no_fallback(no_fallback_config, mock_bao_client_down):
     """Manager with OpenBao down and fallback disabled."""
-    with patch("helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client_down):
+    with patch("openbao_helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client_down):
         mgr = OpenBaoSecretsManager(no_fallback_config)
     return mgr
 
@@ -193,7 +193,7 @@ class TestInstanceManagement:
         assert OpenBaoSecretsManager._instances is not MockSecretsManager._instances
 
     def test_get_or_create_returns_singleton(self, base_config, mock_bao_client):
-        with patch("helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client):
+        with patch("openbao_helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client):
             mgr1 = OpenBaoSecretsManager.get_or_create(base_config)
             mgr2 = OpenBaoSecretsManager.get_or_create(base_config)
         assert mgr1 is mgr2
@@ -201,7 +201,7 @@ class TestInstanceManagement:
     def test_different_configs_get_different_instances(self, mock_bao_client):
         config1 = OpenBaoConfig(enabled=True, url="http://host1:8200", auth_method="token", token="t1")
         config2 = OpenBaoConfig(enabled=True, url="http://host2:8200", auth_method="token", token="t2")
-        with patch("helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client):
+        with patch("openbao_helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client):
             mgr1 = OpenBaoSecretsManager.get_or_create(config1)
             mgr2 = OpenBaoSecretsManager.get_or_create(config2)
         assert mgr1 is not mgr2
@@ -222,7 +222,7 @@ class TestLoadSecrets:
         assert manager_with_bao._bao_client.read_all_secrets.call_count == 1
 
     def test_fallback_on_circuit_open(self, base_config, mock_bao_client_down):
-        with patch("helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client_down):
+        with patch("openbao_helpers.openbao_secrets_manager.OpenBaoClient", return_value=mock_bao_client_down):
             mgr = OpenBaoSecretsManager(base_config)
         secrets = mgr.load_secrets()
         assert mgr._fallback_active is True
@@ -244,7 +244,7 @@ class TestLoadSecrets:
         bad_client = MagicMock()
         bad_client.is_connected.return_value = True
         bad_client.read_all_secrets.side_effect = ConnectionError("refused")
-        with patch("helpers.openbao_secrets_manager.OpenBaoClient", return_value=bad_client):
+        with patch("openbao_helpers.openbao_secrets_manager.OpenBaoClient", return_value=bad_client):
             mgr = OpenBaoSecretsManager(base_config)
         secrets = mgr.load_secrets()
         assert mgr._fallback_active is True

@@ -14,8 +14,8 @@ from unittest.mock import patch, mock_open
 import pytest
 import yaml
 
-import helpers.secrets_scanner as scanner
-from helpers.secrets_scanner import ScanEntry, env_scan, a0proj_scan, mcp_scan
+import openbao_helpers.secrets_scanner as scanner
+from openbao_helpers.secrets_scanner import ScanEntry, env_scan, a0proj_scan, mcp_scan
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ class TestMcpScan:
         """AC-04: path to non-existent file — no exception; result is empty; WARNING logged."""
         nonexistent = str(tmp_path / "nonexistent_mcp.json")
 
-        with caplog.at_level(logging.WARNING, logger="helpers.secrets_scanner"):
+        with caplog.at_level(logging.WARNING, logger="openbao_helpers.secrets_scanner"):
             entries = mcp_scan([nonexistent])
 
         assert entries == [], "Missing file must yield empty result"
@@ -261,7 +261,7 @@ class TestMcpScan:
         bad_file = tmp_path / "bad.json"
         bad_file.write_text("{invalid json content")
 
-        with caplog.at_level(logging.WARNING, logger="helpers.secrets_scanner"):
+        with caplog.at_level(logging.WARNING, logger="openbao_helpers.secrets_scanner"):
             entries = mcp_scan([str(bad_file)])
 
         assert entries == [], "Malformed JSON must yield empty result"

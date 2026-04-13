@@ -29,8 +29,8 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from helpers.config import OpenBaoConfig
-from helpers.openbao_client import OpenBaoClient
+from openbao_helpers.config import OpenBaoConfig
+from openbao_helpers.openbao_client import OpenBaoClient
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class TestResolveAppRoleCredentials:
 
     def _make_client_no_connect(self, config):
         """Create OpenBaoClient with connect() stubbed out."""
-        with patch("helpers.openbao_client.hvac.Client"):
+        with patch("openbao_helpers.openbao_client.hvac.Client"):
             with patch.object(OpenBaoClient, "_connect"):
                 client = OpenBaoClient(config)
         return client
@@ -178,7 +178,7 @@ class TestAuthAppRole:
         monkeypatch.delenv("OPENBAO_ROLE_ID", raising=False)
         monkeypatch.setenv("OPENBAO_SECRET_ID", "env-secret-id")
 
-        with patch("helpers.openbao_client.hvac.Client", return_value=mock_hvac_approle):
+        with patch("openbao_helpers.openbao_client.hvac.Client", return_value=mock_hvac_approle):
             client = OpenBaoClient(approle_config)
 
         mock_hvac_approle.auth.approle.login.assert_called_once_with(
@@ -194,7 +194,7 @@ class TestAuthAppRole:
         mock_client.is_authenticated.return_value = True
         mock_client.auth.token.lookup_self.return_value = {"data": {"ttl": 0}}
 
-        with patch("helpers.openbao_client.hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.openbao_client.hvac.Client", return_value=mock_client):
             client = OpenBaoClient(token_config)
 
         # Token set directly — no approle login called

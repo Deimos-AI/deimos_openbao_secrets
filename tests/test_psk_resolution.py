@@ -32,8 +32,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from helpers.config import OpenBaoConfig, resolve_project_path
-from helpers.openbao_secrets_manager import OpenBaoSecretsManager
+from openbao_helpers.config import OpenBaoConfig, resolve_project_path
+from openbao_helpers.openbao_secrets_manager import OpenBaoSecretsManager
 
 
 # ---------------------------------------------------------------------------

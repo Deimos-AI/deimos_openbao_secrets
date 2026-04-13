@@ -67,7 +67,7 @@ def _get_openbao_manager():
     # REM-017: first-install detection (AC-13)
     # Entirely wrapped in try/except — registry check failure must never block plugin load.
     try:
-        import helpers.registry as _reg_mod  # direct import — plugin root on sys.path
+        import openbao_helpers.registry as _reg_mod  # direct import — plugin root on sys.path
         if _reg_mod.RegistryManager().is_bootstrap_needed():
             logger.info(
                 "REM-017: secrets registry absent — run bootstrap scan via WebUI "

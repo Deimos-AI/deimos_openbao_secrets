@@ -25,7 +25,7 @@ def _get_config_module():
     mod_name = "deimos_openbao_secrets_config"
     spec = importlib.util.spec_from_file_location(
         mod_name,
-        _PLUGIN_DIR / "helpers" / "config.py",
+        _PLUGIN_DIR / "openbao_helpers" / "config.py",
     )
     mod = importlib.util.module_from_spec(spec)
     import sys

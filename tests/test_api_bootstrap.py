@@ -30,8 +30,8 @@ def bootstrap_mod():
         "api_bootstrap",
         "helpers.api",
         "helpers.plugins",
-        "deimos_openbao_secrets_helpers_secrets_scanner",
-        "deimos_openbao_secrets_helpers_registry",
+        "openbao_helpers.secrets_scanner",
+        "openbao_helpers.registry",
     ]
     _saved = {k: sys.modules.get(k) for k in _OWNED_KEYS}
 
@@ -81,7 +81,7 @@ def _make_mock_registry(bootstrap_needed: bool = True, entries=None):
     mock_reg_mod.RegistryManager.return_value = mock_rm
 
     # RegistryEntry factory
-    from helpers.registry import RegistryEntry
+    from openbao_helpers.registry import RegistryEntry
     mock_reg_mod.RegistryEntry = RegistryEntry
 
     return mock_reg_mod, mock_rm
@@ -89,7 +89,7 @@ def _make_mock_registry(bootstrap_needed: bool = True, entries=None):
 
 def _make_mock_scanner(env_entries=None, a0proj_entries=None, mcp_entries=None):
     """Return a mock scanner module."""
-    from helpers.secrets_scanner import ScanEntry
+    from openbao_helpers.secrets_scanner import ScanEntry
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
 
@@ -108,7 +108,7 @@ def _make_mock_scanner(env_entries=None, a0proj_entries=None, mcp_entries=None):
 
 
 def _make_scan_entry(key: str, source: str = "env_scan", context: str = "test.env"):
-    from helpers.secrets_scanner import ScanEntry
+    from openbao_helpers.secrets_scanner import ScanEntry
     from datetime import datetime, timezone
     return ScanEntry(key=key, source=source, context=context,
                      discovered_at=datetime.now(timezone.utc).isoformat())
@@ -135,7 +135,7 @@ class TestStatusAction:
 
     def test_status_action_registry_present(self, bootstrap_mod):
         """AC-11: status action with 5 entries returns entry_count=5, bootstrap_needed=False."""
-        from helpers.registry import RegistryEntry
+        from openbao_helpers.registry import RegistryEntry
         entries = [
             RegistryEntry(
                 id=RegistryEntry.make_id("env_scan", f"ctx{i}", f"KEY_{i}"),

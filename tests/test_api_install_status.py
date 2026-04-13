@@ -38,10 +38,10 @@ def _run(coro):
 @pytest.fixture(autouse=True)
 def clean_sys_modules():
     """Clean deferred import modules between tests."""
-    for key in ("helpers.config", "helpers.plugins", "helpers.openbao_client", "helpers.registry"):
+    for key in ("openbao_helpers.config", "helpers.plugins", "openbao_helpers.openbao_client", "openbao_helpers.registry"):
         sys.modules.pop(key, None)
     yield
-    for key in ("helpers.config", "helpers.plugins", "helpers.openbao_client", "helpers.registry"):
+    for key in ("openbao_helpers.config", "helpers.plugins", "openbao_helpers.openbao_client", "openbao_helpers.registry"):
         sys.modules.pop(key, None)
 
 
@@ -70,7 +70,7 @@ class TestInstallStatusEndpoint:
 
         with patch.dict(sys.modules, {
             "helpers.plugins": mock_plugins,
-            "helpers.config": mock_config_mod,
+            "openbao_helpers.config": mock_config_mod,
         }):
             handler = InstallStatus()
             result = _run(handler.process())
@@ -107,9 +107,9 @@ class TestInstallStatusEndpoint:
 
         with patch.dict(sys.modules, {
             "helpers.plugins": mock_plugins,
-            "helpers.config": mock_config_mod,
-            "helpers.openbao_client": mock_client_mod,
-            "helpers.registry": mock_registry_mod,
+            "openbao_helpers.config": mock_config_mod,
+            "openbao_helpers.openbao_client": mock_client_mod,
+            "openbao_helpers.registry": mock_registry_mod,
         }):
             handler = InstallStatus()
             result = _run(handler.process())
@@ -137,8 +137,8 @@ class TestInstallStatusEndpoint:
 
         with patch.dict(sys.modules, {
             "helpers.plugins": mock_plugins,
-            "helpers.config": mock_config_mod,
-            "helpers.openbao_client": mock_client_mod,
+            "openbao_helpers.config": mock_config_mod,
+            "openbao_helpers.openbao_client": mock_client_mod,
         }):
             handler = InstallStatus()
             result = _run(handler.process())
@@ -213,9 +213,9 @@ class TestInstallStatusEndpoint:
 
         with patch.dict(sys.modules, {
             "helpers.plugins": mock_plugins,
-            "helpers.config": mock_config_mod,
-            "helpers.openbao_client": mock_client_mod,
-            "helpers.registry": mock_registry_mod,
+            "openbao_helpers.config": mock_config_mod,
+            "openbao_helpers.openbao_client": mock_client_mod,
+            "openbao_helpers.registry": mock_registry_mod,
         }):
             handler = InstallStatus()
             result = _run(handler.process())
@@ -261,9 +261,9 @@ class TestInstallStatusEndpoint:
 
         with patch.dict(sys.modules, {
             "helpers.plugins": mock_plugins,
-            "helpers.config": mock_config_mod,
-            "helpers.openbao_client": mock_client_mod,
-            "helpers.registry": mock_registry_mod,
+            "openbao_helpers.config": mock_config_mod,
+            "openbao_helpers.openbao_client": mock_client_mod,
+            "openbao_helpers.registry": mock_registry_mod,
         }):
             handler = InstallStatus()
             result = _run(handler.process())
@@ -304,9 +304,9 @@ class TestInstallStatusEndpoint:
 
         with patch.dict(sys.modules, {
             "helpers.plugins": mock_plugins,
-            "helpers.config": mock_config_mod,
-            "helpers.openbao_client": mock_client_mod,
-            "helpers.registry": mock_registry_mod,
+            "openbao_helpers.config": mock_config_mod,
+            "openbao_helpers.openbao_client": mock_client_mod,
+            "openbao_helpers.registry": mock_registry_mod,
         }):
             handler = InstallStatus()
             result = _run(handler.process())

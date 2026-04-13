@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Plugin helper bootstrap -- load helpers/config.py via importlib.util.
 # Same pattern as api/sync_plugins.py.
 # ---------------------------------------------------------------------------
-_PLUGIN_CFG_MODULE = "deimos_openbao_secrets_helpers_config_propagate"
+_PLUGIN_CFG_MODULE = "openbao_helpers.config_propagate"
 
 
 def _get_config_module():
@@ -29,7 +29,7 @@ def _get_config_module():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             raise ImportError("deimos_openbao_secrets plugin dir not found")
-        config_path = os.path.join(plugin_dir, "helpers", "config.py")
+        config_path = os.path.join(plugin_dir, "openbao_helpers", "config.py")
         if not os.path.exists(config_path):
             raise ImportError(f"helpers/config.py not found at: {config_path}")
         spec = importlib.util.spec_from_file_location(_PLUGIN_CFG_MODULE, config_path)
@@ -50,7 +50,7 @@ _PLUGIN_DIR = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 # vault_io loader (same pattern as sync_plugins.py)
 # ---------------------------------------------------------------------------
-_VAULT_IO_MODULE = "deimos_openbao_secrets_helpers_vault_io_propagate"
+_VAULT_IO_MODULE = "openbao_helpers.vault_io_propagate"
 
 
 def _load_vault_io():
@@ -60,7 +60,7 @@ def _load_vault_io():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "vault_io.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "vault_io.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_VAULT_IO_MODULE, path)
@@ -73,7 +73,7 @@ def _load_vault_io():
 # ---------------------------------------------------------------------------
 # propagator loader
 # ---------------------------------------------------------------------------
-_PROPAGATOR_MODULE = "deimos_openbao_secrets_helpers_propagator_api"
+_PROPAGATOR_MODULE = "openbao_helpers.propagator_api"
 
 
 def _load_propagator():
@@ -83,7 +83,7 @@ def _load_propagator():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "propagator.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "propagator.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_PROPAGATOR_MODULE, path)
@@ -96,7 +96,7 @@ def _load_propagator():
 # ---------------------------------------------------------------------------
 # registry loader
 # ---------------------------------------------------------------------------
-_REGISTRY_MODULE = "deimos_openbao_secrets_helpers_registry_propagate"
+_REGISTRY_MODULE = "openbao_helpers.registry_propagate"
 
 
 def _load_registry():
@@ -106,7 +106,7 @@ def _load_registry():
         plugin_dir = find_plugin_dir("deimos_openbao_secrets")
         if not plugin_dir:
             return None
-        path = os.path.join(plugin_dir, "helpers", "registry.py")
+        path = os.path.join(plugin_dir, "openbao_helpers", "registry.py")
         if not os.path.exists(path):
             return None
         spec = importlib.util.spec_from_file_location(_REGISTRY_MODULE, path)

@@ -17,6 +17,6 @@ Re-exports the resolve_secret helper at the package root so consumers
 can import from a stable path without knowledge of internal module layout.
 """
 
-from deimos_openbao_secrets.helpers.factory_common import resolve_secret  # noqa: F401
+from deimos_openbao_secrets.openbao_helpers.factory_common import resolve_secret  # noqa: F401
 
 __all__ = ['resolve_secret']
