@@ -113,3 +113,24 @@ sys.modules.setdefault("helpers.secrets", _mock_secrets_mod)
 sys.modules.setdefault("python", MagicMock())
 sys.modules.setdefault("python.helpers", MagicMock())
 sys.modules.setdefault("python.helpers.secrets", _mock_secrets_mod)
+
+# ── Step 6: Mock helpers.extension (A0 framework — needed by inject/cleanup hooks) ────
+# Extension subclasses import from helpers.extension; provide a minimal base.
+from abc import abstractmethod as _abstractmethod  # noqa: E402
+from collections.abc import Awaitable as _Awaitable  # noqa: E402
+
+
+class _MockExtension:
+    """Minimal stand-in for python.helpers.extension.Extension."""
+    def __init__(self, agent=None, **kwargs):
+        self.agent = agent
+        self.kwargs = kwargs
+
+    @_abstractmethod
+    def execute(self, **kwargs):
+        pass
+
+
+_mock_ext_mod = MagicMock()
+_mock_ext_mod.Extension = _MockExtension
+sys.modules.setdefault("helpers.extension", _mock_ext_mod)

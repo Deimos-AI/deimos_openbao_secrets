@@ -11,25 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Remove injected terminal secrets from os.environ after code_execution_tool completes.
+"""Clear extra_env terminal secrets after code_execution_tool completes.
 
 Hook:   tool_execute_after  (async, priority 15)
 
 Purpose
 -------
-Immediately after code_execution_tool finishes, remove from os.environ every key
-that _15_inject_terminal_secrets.py (tool_execute_before, priority 15) set.
+Immediately after code_execution_tool finishes, clear the
+_terminal_extra_env dict and _terminal_injected_keys list from
+agent.context so that resolved secret values cannot leak to subsequent
+tool invocations.
 
-The list of injected keys is read from agent.context._terminal_injected_keys,
-which is written by the injection hook before the tool fires.  If the attribute
-is absent (e.g. the inject hook was skipped or raised) this hook is a safe no-op.
+When the framework lacks extra_env support (legacy path), this hook also
+removes the injected keys from os.environ for backward compatibility.
 
 Security
 --------
-- AC-05: removes all injected keys immediately after tool completes.
-- Minimises the os.environ exposure window to exactly one tool invocation.
-- Fail-open: on any exception, logs a warning and does not raise — subsequent
-  tool calls are never blocked by cleanup failures.
+- AC-04: clears _terminal_extra_env after tool completes.
+- AC-05: removes os.environ keys when legacy fallback was used.
+- Fail-open: on any exception, logs a warning and does not raise.
 """
 from __future__ import annotations
 
@@ -43,11 +43,10 @@ logger = logging.getLogger(__name__)
 
 
 class CleanupTerminalSecrets(Extension):
-    """Remove terminal secrets injected by _15_inject_terminal_secrets from os.environ.
+    """Clear terminal secrets staged by _15_inject_terminal_secrets.
 
     Registered in the tool_execute_after lifecycle hook at priority 15.
     No-op for all tools other than code_execution_tool.
-    No-op if _terminal_injected_keys is absent or empty.
     """
 
     async def execute(
@@ -56,44 +55,52 @@ class CleanupTerminalSecrets(Extension):
         tool: Any = None,
         **kwargs: Any,
     ) -> None:
-        """Pop all injected terminal secret keys from os.environ.
+        """Clear _terminal_extra_env and optionally clean os.environ.
 
-        Satisfies: AC-05
+        Satisfies: AC-04, AC-05
         """
         # Only clean up after code_execution_tool invocations
         if tool_name != "code_execution_tool":
             return
 
         try:
-            # Read the list of keys injected by the before-hook.
-            # AttributeError is expected when the inject hook was skipped.
+            # Read the list of keys injected by the before-hook
+            injected_keys: list[str] = getattr(
+                self.agent.context, "_terminal_injected_keys", []
+            ) or []
+
+            # AC-04: clear _terminal_extra_env so secrets don't persist
             try:
-                injected_keys: list[str] = getattr(
-                    self.agent.context, "_terminal_injected_keys", []
-                ) or []
-            except AttributeError:
-                injected_keys = []
-
-            if not injected_keys:
-                logger.debug(
-                    "CleanupTerminalSecrets: no injected keys to clean up"
+                extra_env = getattr(
+                    self.agent.context, "_terminal_extra_env", None
                 )
-                return
-
-            removed: list[str] = []
-            for key in injected_keys:
-                popped = os.environ.pop(key, None)
-                if popped is not None:
-                    removed.append(key)
-                    # AC-05: log key name only — never log the value
+                if extra_env is not None:
+                    self.agent.context._terminal_extra_env = None
                     logger.debug(
-                        "CleanupTerminalSecrets: removed %r from os.environ", key
+                        "CleanupTerminalSecrets: cleared _terminal_extra_env "
+                        "(%d key(s))",
+                        len(extra_env) if isinstance(extra_env, dict) else 0,
                     )
-                else:
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+            # AC-05: backward compat — remove os.environ keys if legacy path used
+            if injected_keys:
+                removed: list[str] = []
+                for key in injected_keys:
+                    popped = os.environ.pop(key, None)
+                    if popped is not None:
+                        removed.append(key)
+                        logger.debug(
+                            "CleanupTerminalSecrets: removed %r from os.environ "
+                            "(legacy fallback)",
+                            key,
+                        )
+
+                if removed:
                     logger.debug(
-                        "CleanupTerminalSecrets: %r was not present in os.environ "
-                        "(already removed or never set)",
-                        key,
+                        "CleanupTerminalSecrets: removed %d key(s) from os.environ",
+                        len(removed),
                     )
 
             # Clear the injected keys list on the context
@@ -102,10 +109,8 @@ class CleanupTerminalSecrets(Extension):
             except Exception:  # pylint: disable=broad-except
                 pass
 
-            # LOW-03: Log only count, not key names (prevents secret name leakage)
             logger.debug(
-                "CleanupTerminalSecrets: cleanup complete — removed %d key(s)",
-                len(removed),
+                "CleanupTerminalSecrets: cleanup complete"
             )
 
         except Exception as exc:  # pylint: disable=broad-except
