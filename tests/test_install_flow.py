@@ -23,6 +23,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import helpers.install_flow as inf  # noqa: E402
 
+@pytest.fixture(autouse=True)
+def _clean_importlib_caches():
+    """Clean importlib cache keys between tests."""
+    import sys as _sys
+    _cache_keys = [k for k in list(_sys.modules.keys()) if k.startswith("deimos_openbao_secrets_helpers_")]
+    for k in _cache_keys:
+        _sys.modules.pop(k, None)
+    yield
+    _cache_keys = [k for k in list(_sys.modules.keys()) if k.startswith("deimos_openbao_secrets_helpers_")]
+    for k in _cache_keys:
+        _sys.modules.pop(k, None)
+
+
 
 # ===========================================================================
 # Mock config factory
@@ -693,6 +706,7 @@ class TestBootstrapVaultFork:
 
         with patch.dict(sys.modules, {
             "helpers.install_flow": mock_install,
+            "deimos_openbao_secrets_helpers_install_flow": mock_install,
             "helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
@@ -728,6 +742,7 @@ class TestBootstrapVaultFork:
 
         with patch.dict(sys.modules, {
             "helpers.install_flow": mock_install,
+            "deimos_openbao_secrets_helpers_install_flow": mock_install,
             "helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
@@ -762,6 +777,7 @@ class TestBootstrapVaultFork:
 
         with patch.dict(sys.modules, {
             "helpers.install_flow": mock_install,
+            "deimos_openbao_secrets_helpers_install_flow": mock_install,
             "helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
@@ -795,6 +811,7 @@ class TestBootstrapVaultFork:
 
         with patch.dict(sys.modules, {
             "helpers.install_flow": mock_install,
+            "deimos_openbao_secrets_helpers_install_flow": mock_install,
             "helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):

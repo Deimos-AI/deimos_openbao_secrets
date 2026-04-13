@@ -212,26 +212,36 @@ def _bootstrap_vault() -> None:
 
     Satisfies: E-08 AC-01 through AC-05, AC-08; E-08-ext AC-D1, AC-D2
     """
-    # Ensure plugin dir is first on sys.path so bare `from helpers.X` imports
-    # resolve to the plugin's helpers/ directory, not the framework's /a0/helpers/.
-    _plugin_dir = str(Path(__file__).resolve().parent)
-    if _plugin_dir not in sys.path:
-        sys.path.insert(0, _plugin_dir)
+    import importlib.util as _ilu
 
-    try:
-        from helpers.install_flow import (
-            apply_core_patch,
-            validate_connection,
-            ensure_kv_mount,
-            ensure_secrets_path,
-            seed_terminal_secrets,
-            bootstrap_registry,
-            discover_existing_secrets,
-            register_discovered_secrets,
-        )
-    except ImportError as exc:
-        logger.warning("install_flow module not available: %s", exc)
-        return
+    # Load install_flow.py directly by file path to avoid namespace collision
+    # with /a0/helpers/ (framework). Python caches package locations after
+    # first import, so sys.path manipulation is insufficient.
+    _cache_key = "deimos_openbao_secrets_helpers_install_flow"
+    if _cache_key in sys.modules:
+        _install_flow = sys.modules[_cache_key]
+    else:
+        _flow_path = str(Path(__file__).resolve().parent / "helpers" / "install_flow.py")
+        _spec = _ilu.spec_from_file_location(_cache_key, _flow_path)
+        if _spec is None or _spec.loader is None:
+            logger.warning("install_flow.py not found at %s", _flow_path)
+            return
+        try:
+            _install_flow = _ilu.module_from_spec(_spec)
+            sys.modules[_cache_key] = _install_flow
+            _spec.loader.exec_module(_install_flow)
+        except Exception as exc:
+            logger.warning("install_flow module load failed: %s", exc)
+            return
+
+    apply_core_patch = _install_flow.apply_core_patch
+    validate_connection = _install_flow.validate_connection
+    ensure_kv_mount = _install_flow.ensure_kv_mount
+    ensure_secrets_path = _install_flow.ensure_secrets_path
+    seed_terminal_secrets = _install_flow.seed_terminal_secrets
+    bootstrap_registry = _install_flow.bootstrap_registry
+    discover_existing_secrets = _install_flow.discover_existing_secrets
+    register_discovered_secrets = _install_flow.register_discovered_secrets
 
     # AC-patch: Apply core patch for PR #1394 (hook_context support)
     patch_result = apply_core_patch()
