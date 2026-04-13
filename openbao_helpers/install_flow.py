@@ -16,12 +16,44 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import hvac  # Bug-1 fix: needed for hvac.exceptions.InvalidPath in ensure_kv_mount/ensure_secrets_path
+
 logger = logging.getLogger(__name__)
 
 _PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)  # plugin dir (1 up from openbao_helpers/)
 
 
 # _load_plugin_module removed — namespace collision resolved by renaming helpers/ to openbao_helpers/
+
+
+def _get_authenticated_client(config: Any) -> Optional[Any]:
+    """Get an authenticated hvac.Client via OpenBaoClient (handles AppRole login).
+
+    Uses OpenBaoClient which properly handles both token and AppRole auth
+    methods, including login flow, namespace headers, and protocol probes.
+
+    Args:
+        config: OpenBaoConfig instance with connection parameters.
+
+    Returns:
+        An authenticated hvac.Client instance, or None if auth failed.
+
+    Bug-1 fix: Previously, ensure_kv_mount, ensure_secrets_path,
+    discover_existing_secrets, and seed_terminal_secrets created raw
+    hvac.Client(url, token=...) which only works for token auth.
+    AppRole configs always failed with 'Not authenticated'.
+    """
+    try:
+        from openbao_helpers.openbao_client import OpenBaoClient
+        wrapper = OpenBaoClient(config)
+        if wrapper._client and wrapper._client.is_authenticated():
+            return wrapper._client
+        logger.warning("_get_authenticated_client: client not authenticated (auth_method=%s)",
+                       getattr(config, 'auth_method', 'unknown'))
+        return None
+    except Exception as exc:
+        logger.error("_get_authenticated_client failed: %s", exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -107,23 +139,10 @@ def ensure_kv_mount(config: Any) -> Dict[str, Any]:
     }
 
     try:
-        import hvac  # deferred — available after deps install
-
-        client = hvac.Client(
-            url=config.url,
-            token=config.token,
-            verify=config.tls_ca_cert if config.tls_ca_cert else config.tls_verify,
-            timeout=config.timeout,
-        )
-
-        # Apply namespace header if configured
-        if getattr(config, 'vault_namespace', None):
-            client.session.headers['X-Vault-Namespace'] = config.vault_namespace
-
-        if not client.is_authenticated():
+        client = _get_authenticated_client(config)
+        if client is None:
             result["error"] = "Not authenticated — cannot create mount"
             return result
-
         # Check if mount already exists
         try:
             mounts = client.sys.list_mounted_secrets_engines()
@@ -188,19 +207,8 @@ def ensure_secrets_path(config: Any) -> Dict[str, Any]:
     }
 
     try:
-        import hvac
-
-        client = hvac.Client(
-            url=config.url,
-            token=config.token,
-            verify=config.tls_ca_cert if config.tls_ca_cert else config.tls_verify,
-            timeout=config.timeout,
-        )
-
-        if getattr(config, 'vault_namespace', None):
-            client.session.headers['X-Vault-Namespace'] = config.vault_namespace
-
-        if not client.is_authenticated():
+        client = _get_authenticated_client(config)
+        if client is None:
             result["error"] = "Not authenticated — cannot create secrets path"
             return result
 
@@ -269,19 +277,8 @@ def discover_existing_secrets(config: Any) -> Dict[str, Any]:
     }
 
     try:
-        import hvac
-
-        client = hvac.Client(
-            url=config.url,
-            token=config.token,
-            verify=config.tls_ca_cert if config.tls_ca_cert else config.tls_verify,
-            timeout=config.timeout,
-        )
-
-        if getattr(config, 'vault_namespace', None):
-            client.session.headers['X-Vault-Namespace'] = config.vault_namespace
-
-        if not client.is_authenticated():
+        client = _get_authenticated_client(config)
+        if client is None:
             result["error"] = "Not authenticated — cannot scan secrets"
             return result
 
@@ -432,19 +429,8 @@ def seed_terminal_secrets(config: Any) -> Dict[str, Any]:
         return result
 
     try:
-        import hvac
-
-        client = hvac.Client(
-            url=config.url,
-            token=config.token,
-            verify=config.tls_ca_cert if config.tls_ca_cert else config.tls_verify,
-            timeout=config.timeout,
-        )
-
-        if getattr(config, 'vault_namespace', None):
-            client.session.headers['X-Vault-Namespace'] = config.vault_namespace
-
-        if not client.is_authenticated():
+        client = _get_authenticated_client(config)
+        if client is None:
             result["errors"].append("Not authenticated — cannot seed secrets")
             return result
 
@@ -656,5 +642,86 @@ def apply_core_patch() -> Dict[str, Any]:
         result["error"] = f"Failed to run patch_core.py: {exc}"
         logger.warning("Core patch execution failed: %s", exc)
         result["applied"] = True  # Non-fatal
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Prompt symlink — E-07/E-08 integration
+# ---------------------------------------------------------------------------
+
+def ensure_prompt_symlink() -> Dict[str, Any]:
+    """Create symlink for agent.system.secrets.md if not already present.
+
+    Links /a0/usr/prompts/agent.system.secrets.md to the plugin's own
+    prompts/agent.system.secrets.md. This replaces the framework's default
+    secrets prompt with the OpenBao-specific one.
+
+    Idempotent — re-running is a no-op if symlink already correct.
+    Non-destructive — skips if a non-symlink file already exists.
+
+    Returns:
+        Dict with keys:
+            symlinked (bool): True if symlink was created or already correct.
+            path (str): The symlink path.
+            target (str): The resolved target path.
+            error (str|None): Error message if symlink creation failed.
+
+    Satisfies: E-08 (prompt integration into install flow)
+    """
+    plugin_dir = Path(__file__).resolve().parent.parent  # plugin root
+    source = plugin_dir / "prompts" / "agent.system.secrets.md"
+    link_path = Path("/a0/usr/prompts/agent.system.secrets.md")
+
+    result: Dict[str, Any] = {
+        "symlinked": False,
+        "path": str(link_path),
+        "target": str(source),
+        "error": None,
+    }
+
+    # Verify source prompt exists
+    if not source.exists():
+        result["error"] = f"Source prompt not found: {source}"
+        logger.warning("ensure_prompt_symlink: %s", result["error"])
+        return result
+
+    # Check if symlink already exists and is correct
+    if link_path.is_symlink():
+        existing_target = os.readlink(str(link_path))
+        resolved_existing = Path(existing_target)
+        if not resolved_existing.is_absolute():
+            resolved_existing = link_path.parent / existing_target
+        if resolved_existing.resolve() == source.resolve():
+            logger.debug("Prompt symlink already correct: %s -> %s", link_path, source)
+            result["symlinked"] = True
+            return result
+        else:
+            # Symlink exists but points elsewhere — remove and recreate
+            logger.info(
+                "Prompt symlink points to %s (expected %s) — updating",
+                existing_target, source,
+            )
+            link_path.unlink()
+    elif link_path.exists():
+        # A real file exists — don't overwrite user's custom prompt
+        logger.warning(
+            "Prompt file already exists (not a symlink): %s — skipping",
+            link_path,
+        )
+        result["error"] = f"Existing file at {link_path} — not overwriting"
+        return result
+
+    # Ensure parent directory exists
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create symlink
+    try:
+        os.symlink(str(source), str(link_path))
+        result["symlinked"] = True
+        logger.info("Created prompt symlink: %s -> %s", link_path, source)
+    except OSError as exc:
+        result["error"] = f"Failed to create symlink: {exc}"
+        logger.error("ensure_prompt_symlink failed: %s", exc)
 
     return result

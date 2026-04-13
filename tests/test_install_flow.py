@@ -145,7 +145,7 @@ class TestEnsureKvMount:
             "secret/": {"type": "kv", "options": {"version": "2"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.ensure_kv_mount(_make_config())
 
         assert result["created"] is False
@@ -157,7 +157,7 @@ class TestEnsureKvMount:
         mock_client = _mock_hvac_client()
         mock_client.sys.list_mounted_secrets_engines.return_value = {}
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.ensure_kv_mount(_make_config())
 
         assert result["created"] is True
@@ -169,10 +169,7 @@ class TestEnsureKvMount:
 
     def test_not_authenticated(self):
         """Unauthenticated client returns error."""
-        mock_client = MagicMock()
-        mock_client.is_authenticated.return_value = False
-
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=None):
             result = inf.ensure_kv_mount(_make_config())
 
         assert result["error"] is not None
@@ -184,7 +181,7 @@ class TestEnsureKvMount:
         mock_client.sys.list_mounted_secrets_engines.side_effect = Exception("list failed")
         mock_client.sys.enable_secrets_engine.side_effect = Exception("forbidden")
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.ensure_kv_mount(_make_config())
 
         assert result["error"] is not None
@@ -204,7 +201,7 @@ class TestEnsureSecretsPath:
             "data": {"data": {"KEY": "value"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.ensure_secrets_path(_make_config())
 
         assert result["created"] is False
@@ -215,7 +212,7 @@ class TestEnsureSecretsPath:
         mock_client = _mock_hvac_client()
         mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("not found")
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.ensure_secrets_path(_make_config())
 
         assert result["created"] is True
@@ -224,10 +221,7 @@ class TestEnsureSecretsPath:
 
     def test_not_authenticated(self):
         """Unauthenticated client returns error."""
-        mock_client = MagicMock()
-        mock_client.is_authenticated.return_value = False
-
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=None):
             result = inf.ensure_secrets_path(_make_config())
 
         assert result["error"] is not None
@@ -256,7 +250,7 @@ class TestSeedTerminalSecrets:
         }
 
         env_vars = {"API_KEY": "test-value", "GH_TOKEN": "gh-test"}
-        with patch("hvac.Client", return_value=mock_client), \
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client), \
              patch.dict(os.environ, env_vars, clear=False):
             result = inf.seed_terminal_secrets(
                 _make_config(terminal_secrets=["API_KEY", "GH_TOKEN"])
@@ -274,7 +268,7 @@ class TestSeedTerminalSecrets:
             "data": {"data": {"API_KEY": "existing-value"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client), \
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client), \
              patch.dict(os.environ, {"API_KEY": "new-value"}, clear=False):
             result = inf.seed_terminal_secrets(
                 _make_config(terminal_secrets=["API_KEY"])
@@ -291,7 +285,7 @@ class TestSeedTerminalSecrets:
             "data": {"data": {}},
         }
 
-        with patch("hvac.Client", return_value=mock_client), \
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client), \
              patch.dict(os.environ, {}, clear=False):
             result = inf.seed_terminal_secrets(
                 _make_config(terminal_secrets=["MISSING_KEY"])
@@ -308,7 +302,7 @@ class TestSeedTerminalSecrets:
         }
         mock_client.secrets.kv.v2.create_or_update_secret.side_effect = Exception("write failed")
 
-        with patch("hvac.Client", return_value=mock_client), \
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client), \
              patch.dict(os.environ, {"API_KEY": "val"}, clear=False):
             result = inf.seed_terminal_secrets(
                 _make_config(terminal_secrets=["API_KEY"])
@@ -468,7 +462,7 @@ class TestIdempotency:
             "secret/": {"type": "kv"},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             r1 = inf.ensure_kv_mount(_make_config())
             r2 = inf.ensure_kv_mount(_make_config())
 
@@ -484,7 +478,7 @@ class TestIdempotency:
             "data": {"data": {"KEY": "val"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             r1 = inf.ensure_secrets_path(_make_config())
             r2 = inf.ensure_secrets_path(_make_config())
 
@@ -498,7 +492,7 @@ class TestIdempotency:
             "data": {"data": {"API_KEY": "existing"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client), \
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client), \
              patch.dict(os.environ, {"API_KEY": "new-val"}, clear=False):
             r1 = inf.seed_terminal_secrets(
                 _make_config(terminal_secrets=["API_KEY"])
@@ -519,7 +513,7 @@ class TestDiscoverExistingSecrets:
         mock_client = _mock_hvac_client()
         mock_client.secrets.kv.v2.read_secret_version.return_value = None
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.discover_existing_secrets(_make_config())
 
         assert result["keys"] == []
@@ -533,7 +527,7 @@ class TestDiscoverExistingSecrets:
             "data": {"data": {"API_KEY": "secret123", "DB_PASSWORD": "hunter2"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.discover_existing_secrets(_make_config())
 
         assert result["keys"] == ["API_KEY", "DB_PASSWORD"]
@@ -547,7 +541,7 @@ class TestDiscoverExistingSecrets:
             "data": {"data": {"_initialized": "true", "SECRET": "val"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.discover_existing_secrets(_make_config())
 
         assert result["keys"] == ["SECRET"]
@@ -555,10 +549,7 @@ class TestDiscoverExistingSecrets:
 
     def test_not_authenticated_returns_error(self):
         """Unauthenticated client returns error, empty keys."""
-        mock_client = MagicMock()
-        mock_client.is_authenticated.return_value = False
-
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=None):
             result = inf.discover_existing_secrets(_make_config())
 
         assert result["error"] is not None
@@ -568,7 +559,7 @@ class TestDiscoverExistingSecrets:
 
     def test_connection_error_returns_error(self):
         """Connection error returns error message, empty keys."""
-        with patch("hvac.Client", side_effect=ConnectionError("refused")):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=None):
             result = inf.discover_existing_secrets(_make_config())
 
         assert result["error"] is not None
@@ -581,7 +572,7 @@ class TestDiscoverExistingSecrets:
             "data": {"data": {"ZEBRA": "z", "APPLE": "a", "MANGO": "m"}},
         }
 
-        with patch("hvac.Client", return_value=mock_client):
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=mock_client):
             result = inf.discover_existing_secrets(_make_config())
 
         assert result["keys"] == ["APPLE", "MANGO", "ZEBRA"]
@@ -739,8 +730,8 @@ class TestBootstrapVaultFork:
         mock_install.seed_terminal_secrets.assert_not_called()
         mock_install.bootstrap_registry.assert_not_called()
 
-    def test_discovery_error_falls_through_to_fresh(self):
-        """Discovery scan error is non-fatal — falls through to fresh path."""
+    def test_discovery_error_with_no_data_aborts(self):
+        """Bug-2 fix: Discovery error with count=0 aborts — no fresh or brownfield."""
         import hooks as hk
 
         mock_install = MagicMock()
@@ -762,15 +753,15 @@ class TestBootstrapVaultFork:
 
         with patch.dict(sys.modules, {
             "openbao_helpers.install_flow": mock_install,
-            "openbao_helpers.install_flow": mock_install,
             "openbao_helpers.config": mock_config_mod,
             "helpers.plugins": mock_plugins,
         }):
             hk._bootstrap_vault()
 
-        # Fresh path taken despite discovery error
-        mock_install.seed_terminal_secrets.assert_called_once()
+        # Bug-2: Neither path taken — abort to prevent data loss
+        mock_install.seed_terminal_secrets.assert_not_called()
         mock_install.register_discovered_secrets.assert_not_called()
+        mock_install.bootstrap_registry.assert_not_called()
 
     def test_idempotent_rerun_with_existing_secrets(self):
         """Re-running install with existing secrets doesn't re-register."""
@@ -908,3 +899,226 @@ class TestEnsurePromptSymlink:
 
         assert result["symlinked"] is False
         assert "not found" in result["error"]
+
+
+# ===========================================================================
+# Bug-1 fix: AppRole auth bypass — _get_authenticated_client tests
+# ===========================================================================
+
+class TestGetAuthenticatedClient:
+    """Bug-1 fix: _get_authenticated_client uses OpenBaoClient for AppRole."""
+
+    def test_returns_client_when_authenticated(self):
+        """Returns hvac.Client when OpenBaoClient auth succeeds."""
+        mock_hvac = MagicMock()
+        mock_hvac.is_authenticated.return_value = True
+        mock_wrapper = MagicMock()
+        mock_wrapper._client = mock_hvac
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper):
+            result = inf._get_authenticated_client(_make_config())
+
+        assert result is mock_hvac
+
+    def test_returns_none_when_not_authenticated(self):
+        """Returns None when OpenBaoClient auth fails (e.g. bad AppRole creds)."""
+        mock_hvac = MagicMock()
+        mock_hvac.is_authenticated.return_value = False
+        mock_wrapper = MagicMock()
+        mock_wrapper._client = mock_hvac
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper):
+            result = inf._get_authenticated_client(_make_config())
+
+        assert result is None
+
+    def test_returns_none_when_client_is_none(self):
+        """Returns None when OpenBaoClient._client is None (protocol mismatch)."""
+        mock_wrapper = MagicMock()
+        mock_wrapper._client = None
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper):
+            result = inf._get_authenticated_client(_make_config())
+
+        assert result is None
+
+    def test_returns_none_on_exception(self):
+        """Returns None when OpenBaoClient raises (connection refused)."""
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", side_effect=ConnectionError("refused")):
+            result = inf._get_authenticated_client(_make_config())
+
+        assert result is None
+
+    def test_approle_auth_uses_openbaoclient(self):
+        """AppRole config goes through OpenBaoClient (which calls _auth_approle)."""
+        mock_hvac = MagicMock()
+        mock_hvac.is_authenticated.return_value = True
+        mock_wrapper = MagicMock()
+        mock_wrapper._client = mock_hvac
+
+        config = _make_config(auth_method="approle")
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper) as mock_cls:
+            result = inf._get_authenticated_client(config)
+
+        assert result is mock_hvac
+        mock_cls.assert_called_once_with(config)
+
+
+class TestAppRoleAuthBypass:
+    """Bug-1 fix: All 4 functions use _get_authenticated_client, not raw hvac.Client."""
+
+    def _make_authed_wrapper(self):
+        """Create a mock OpenBaoClient wrapper with authenticated _client."""
+        mock_client = _mock_hvac_client()
+        mock_client.sys.list_mounted_secrets_engines.return_value = {}
+        mock_client.secrets.kv.v2.read_secret_version.return_value = None
+        mock_client.secrets.kv.v2.create_or_update_secret.return_value = None
+        mock_wrapper = MagicMock()
+        mock_wrapper._client = mock_client
+        return mock_wrapper, mock_client
+
+    def test_ensure_kv_mount_with_approle(self):
+        """ensure_kv_mount works with AppRole config via _get_authenticated_client."""
+        mock_wrapper, mock_client = self._make_authed_wrapper()
+        config = _make_config(auth_method="approle")
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper):
+            result = inf.ensure_kv_mount(config)
+
+        assert result["error"] is None
+        assert result["created"] is True
+
+    def test_ensure_secrets_path_with_approle(self):
+        """ensure_secrets_path works with AppRole config via _get_authenticated_client."""
+        mock_wrapper, mock_client = self._make_authed_wrapper()
+        config = _make_config(auth_method="approle")
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper):
+            result = inf.ensure_secrets_path(config)
+
+        assert result["error"] is None
+        assert result["created"] is True
+
+    def test_discover_existing_secrets_with_approle(self):
+        """discover_existing_secrets works with AppRole config via _get_authenticated_client."""
+        mock_wrapper, mock_client = self._make_authed_wrapper()
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {"data": {"KEY1": "v1", "KEY2": "v2"}},
+        }
+        config = _make_config(auth_method="approle")
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper):
+            result = inf.discover_existing_secrets(config)
+
+        assert result["error"] is None
+        assert result["count"] == 2
+
+    def test_seed_terminal_secrets_with_approle(self):
+        """seed_terminal_secrets works with AppRole config via _get_authenticated_client."""
+        mock_wrapper, mock_client = self._make_authed_wrapper()
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {}}}
+        config = _make_config(auth_method="approle", terminal_secrets=["API_KEY"])
+
+        with patch("openbao_helpers.openbao_client.OpenBaoClient", return_value=mock_wrapper), \
+             patch.dict(os.environ, {"API_KEY": "test-val"}, clear=False):
+            result = inf.seed_terminal_secrets(config)
+
+        assert result["errors"] == []
+        assert "API_KEY" in result["seeded"]
+
+    def test_ensure_kv_mount_fails_gracefully_on_auth_failure(self):
+        """ensure_kv_mount returns error when _get_authenticated_client returns None."""
+        config = _make_config(auth_method="approle")
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=None):
+            result = inf.ensure_kv_mount(config)
+
+        assert result["error"] is not None
+        assert "authenticated" in result["error"].lower()
+
+    def test_seed_terminal_secrets_fails_gracefully_on_auth_failure(self):
+        """seed_terminal_secrets appends error when _get_authenticated_client returns None."""
+        config = _make_config(auth_method="approle", terminal_secrets=["KEY"])
+        with patch("openbao_helpers.install_flow._get_authenticated_client", return_value=None):
+            result = inf.seed_terminal_secrets(config)
+
+        assert len(result["errors"]) == 1
+        assert "authenticated" in result["errors"][0].lower()
+
+
+# ===========================================================================
+# Bug-2 fix: Discovery error guard — hooks.py _bootstrap_vault
+# ===========================================================================
+
+class TestDiscoveryErrorGuard:
+    """Bug-2 fix: Discovery error with count=0 aborts install to prevent data loss."""
+
+    def _setup_bootstrap(self, discovery_return):
+        """Common setup for _bootstrap_vault tests."""
+        import hooks as hk
+
+        mock_install = MagicMock()
+        mock_install.apply_core_patch.return_value = {"applied": True, "error": None}
+        mock_install.validate_connection.return_value = {"error": None, "connected": True}
+        mock_install.ensure_kv_mount.return_value = {"error": None}
+        mock_install.ensure_secrets_path.return_value = {"error": None}
+        mock_install.discover_existing_secrets.return_value = discovery_return
+        mock_install.seed_terminal_secrets.return_value = {"seeded": ["KEY1"], "skipped": [], "errors": []}
+        mock_install.bootstrap_registry.return_value = {"registered": 1, "skipped": 0, "error": None}
+        mock_install.register_discovered_secrets.return_value = {"registered": 1, "skipped": 0, "error": None}
+
+        mock_config_mod = MagicMock()
+        config = _make_config()
+        mock_config_mod.load_config.return_value = config
+        mock_plugins = MagicMock()
+        mock_plugins.find_plugin_dir.return_value = "/fake/dir"
+
+        return hk, mock_install, mock_config_mod, mock_plugins
+
+    def test_fresh_path_when_discovery_clean_no_secrets(self):
+        """Fresh path IS taken when discovery returns count=0 with no error."""
+        hk, mock_install, mock_config_mod, mock_plugins = self._setup_bootstrap(
+            {"keys": [], "count": 0, "error": None}
+        )
+
+        with patch.dict(sys.modules, {
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
+            "helpers.plugins": mock_plugins,
+        }):
+            hk._bootstrap_vault()
+
+        mock_install.seed_terminal_secrets.assert_called_once()
+        mock_install.register_discovered_secrets.assert_not_called()
+
+    def test_brownfield_path_when_discovery_has_secrets_despite_error(self):
+        """Brownfield path IS taken when discovery has count>0 despite error."""
+        hk, mock_install, mock_config_mod, mock_plugins = self._setup_bootstrap(
+            {"keys": ["KEY1", "KEY2"], "count": 2, "error": "partial scan failure"}
+        )
+
+        with patch.dict(sys.modules, {
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
+            "helpers.plugins": mock_plugins,
+        }):
+            hk._bootstrap_vault()
+
+        mock_install.register_discovered_secrets.assert_called_once()
+        mock_install.seed_terminal_secrets.assert_not_called()
+
+    def test_abort_when_discovery_fails_no_data(self):
+        """Neither path taken when discovery returns error with count=0."""
+        hk, mock_install, mock_config_mod, mock_plugins = self._setup_bootstrap(
+            {"keys": [], "count": 0, "error": "AppRole auth bypass — not authenticated"}
+        )
+
+        with patch.dict(sys.modules, {
+            "openbao_helpers.install_flow": mock_install,
+            "openbao_helpers.config": mock_config_mod,
+            "helpers.plugins": mock_plugins,
+        }):
+            hk._bootstrap_vault()
+
+        mock_install.seed_terminal_secrets.assert_not_called()
+        mock_install.register_discovered_secrets.assert_not_called()
+        mock_install.bootstrap_registry.assert_not_called()

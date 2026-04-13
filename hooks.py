@@ -213,6 +213,7 @@ def _bootstrap_vault() -> None:
     Satisfies: E-08 AC-01 through AC-05, AC-08; E-08-ext AC-D1, AC-D2
     """
     from openbao_helpers.install_flow import (
+        ensure_prompt_symlink,
         apply_core_patch,
         validate_connection,
         ensure_kv_mount,
@@ -227,6 +228,10 @@ def _bootstrap_vault() -> None:
     patch_result = apply_core_patch()
     if patch_result.get("error"):
         logger.warning("Core patch: %s", patch_result["error"])
+    # E-07/E-08: Ensure prompt symlink exists (before vault bootstrap)
+    prompt_result = ensure_prompt_symlink()
+    if prompt_result.get("error"):
+        logger.warning("Prompt symlink: %s", prompt_result["error"])
 
     # Load config for connection/mount/path operations
     try:
@@ -267,7 +272,14 @@ def _bootstrap_vault() -> None:
     discovery = discover_existing_secrets(config)
     if discovery.get("error"):
         logger.warning("Vault discovery scan failed: %s", discovery["error"])
-        # Non-fatal — fall through to fresh path
+        # Bug-2 fix: if discovery failed AND found no data, do NOT proceed
+        # with either path — a failed scan on a populated vault could trigger
+        # an incorrect Fresh install, overwriting existing secrets.
+        if not discovery.get("count"):
+            logger.error(
+                "Discovery failed with no data — aborting install to prevent data loss"
+            )
+            return
 
     if discovery["count"] > 0:
         # ── Brownfield Discovery Path ──
