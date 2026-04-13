@@ -617,10 +617,9 @@ def apply_core_patch() -> Dict[str, Any]:
         result["output"] = "Patch already applied — skipping"
         return result
 
-    # CR-5: Use portable relative path — Path(__file__).parent.parent.parent resolves
-    # to the project root (3 levels up from helpers/) where patch_core.py lives.
-    # Removed env-specific hardcoded /a0/usr/projects/... primary path.
-    patch_script = Path(__file__).parent.parent.parent / "patch_core.py"
+    # Look for patch_core.py in the plugin directory (1 level up from helpers/).
+    # patch_core.py is bundled with the plugin — not the parent project.
+    patch_script = Path(__file__).resolve().parent.parent / "patch_core.py"
 
     if not patch_script.exists():
         result["error"] = "patch_core.py not found — skipping core patch"

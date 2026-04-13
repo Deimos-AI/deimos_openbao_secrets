@@ -212,6 +212,12 @@ def _bootstrap_vault() -> None:
 
     Satisfies: E-08 AC-01 through AC-05, AC-08; E-08-ext AC-D1, AC-D2
     """
+    # Ensure plugin dir is first on sys.path so bare `from helpers.X` imports
+    # resolve to the plugin's helpers/ directory, not the framework's /a0/helpers/.
+    _plugin_dir = str(Path(__file__).resolve().parent)
+    if _plugin_dir not in sys.path:
+        sys.path.insert(0, _plugin_dir)
+
     try:
         from helpers.install_flow import (
             apply_core_patch,
