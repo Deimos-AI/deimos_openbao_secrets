@@ -25,6 +25,29 @@ _PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)  # plugin dir (1 up f
 
 # _load_plugin_module removed — namespace collision resolved by renaming helpers/ to openbao_helpers/
 
+def _ensure_module_aliases() -> None:
+    """Bootstrap sys.modules aliases required by openbao_client.py.
+
+    openbao_client.py does `from openbao_config import OpenBaoConfig` at module
+    level.  The `openbao_config` alias is normally registered by
+    factory_common.py during factory init, but install_flow.py is called
+    during the install hook *before* factory init runs.
+
+    This function mirrors the conftest.py bootstrap: if the alias is not
+    already present, it imports openbao_helpers.config and registers it.
+    Idempotent — safe to call multiple times.
+    """
+    if "openbao_config" in sys.modules:
+        return  # Already registered by factory_common or a prior call
+    try:
+        import openbao_helpers.config as _cfg_mod
+        sys.modules["openbao_config"] = _cfg_mod
+        logger.debug("_ensure_module_aliases: registered openbao_config alias")
+    except Exception as exc:
+        logger.warning("_ensure_module_aliases: failed to register openbao_config: %s", exc)
+
+
+
 
 def _get_authenticated_client(config: Any) -> Optional[Any]:
     """Get an authenticated hvac.Client via OpenBaoClient (handles AppRole login).
@@ -43,6 +66,7 @@ def _get_authenticated_client(config: Any) -> Optional[Any]:
     hvac.Client(url, token=...) which only works for token auth.
     AppRole configs always failed with 'Not authenticated'.
     """
+    _ensure_module_aliases()
     try:
         from openbao_helpers.openbao_client import OpenBaoClient
         wrapper = OpenBaoClient(config)
@@ -85,6 +109,7 @@ def validate_connection(config: Any) -> Dict[str, Any]:
         "error": None,
     }
 
+    _ensure_module_aliases()
     try:
         from openbao_helpers.openbao_client import OpenBaoClient as _OpenBaoClient_cls
         OpenBaoClient = _OpenBaoClient_cls
